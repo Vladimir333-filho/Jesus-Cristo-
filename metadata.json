@@ -1,0 +1,6 @@
+{
+  "name": "Angola Connect Africa Business",
+  "description": "Plataforma empresarial de conexões comerciais, oportunidades, investimento e directório verificado em Angola e África.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
