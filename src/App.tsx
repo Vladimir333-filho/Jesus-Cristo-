@@ -39,6 +39,7 @@ export default function App() {
   const [phoneInput, setPhoneInput] = useState('');
   const [activeCountries, setActiveCountries] = useState<Country[]>([]);
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'recovery'>('signin');
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
 
   // Real data state from Supabase (strict allowlist of public fields)
@@ -75,8 +76,14 @@ export default function App() {
       setUser(session?.user ?? null);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
+      if (event === 'PASSWORD_RECOVERY') {
+        setAuthMode('recovery');
+        setIsPasswordRecovery(true);
+        setAuthMessage('');
+        setAuthModalOpen(true);
+      }
     });
 
     fetchVerifiedBusinesses();
@@ -130,7 +137,19 @@ export default function App() {
     }
 
     try {
-      if (authMode === 'recovery') {
+      if (authMode === 'recovery' && isPasswordRecovery) {
+        if (passwordInput.length < 8) {
+          setAuthMessage(lang === 'pt' ? 'A nova palavra-passe deve ter pelo menos 8 caracteres.' : 'The new password must contain at least 8 characters.');
+          return;
+        }
+        const { error } = await supabase.auth.updateUser({ password: passwordInput });
+        if (error) throw error;
+        setPasswordInput('');
+        setIsPasswordRecovery(false);
+        setAuthMessage(lang === 'pt' ? 'Palavra-passe actualizada com sucesso. Já pode iniciar sessão.' : 'Password updated successfully. You can now sign in.');
+        setAuthMode('signin');
+        setAuthModalOpen(false);
+      } else if (authMode === 'recovery') {
         const { error } = await supabase.auth.resetPasswordForEmail(emailInput.trim(), {
           redirectTo: `${window.location.origin}/`,
         });
@@ -761,15 +780,15 @@ export default function App() {
                 </div>
               </div>
 
-              {authMode !== 'recovery' && (
+              {(authMode !== 'recovery' || isPasswordRecovery) && (
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Palavra-passe</label>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">{authMode === 'recovery' ? (lang === 'pt' ? 'Nova palavra-passe' : 'New password') : 'Palavra-passe'}</label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
                   <input
                     type="password"
                     required
-                    minLength={6}
+                    minLength={authMode === 'recovery' ? 8 : 6}
                     value={passwordInput}
                     onChange={(e) => setPasswordInput(e.target.value)}
                     placeholder="••••••••"
@@ -787,7 +806,9 @@ export default function App() {
                 {authMode === 'signin'
                   ? lang === 'pt' ? 'Entrar no Sistema' : 'Sign In'
                   : authMode === 'recovery'
-                    ? lang === 'pt' ? 'Enviar instruções' : 'Send instructions'
+                    ? isPasswordRecovery
+                      ? lang === 'pt' ? 'Actualizar palavra-passe' : 'Update password'
+                      : lang === 'pt' ? 'Enviar instruções' : 'Send instructions'
                     : lang === 'pt' ? 'Criar Registo' : 'Create Account'}
               </button>
             </form>
