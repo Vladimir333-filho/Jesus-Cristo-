@@ -604,34 +604,12 @@ export async function fetchBusinessesForGovernance(
   }));
 }
 
-export async function recordAccessAuditEvent(params: {
-  actorId: string;
-  action: string;
-  resource: string;
-  resourceId: string;
-  countryCode: string;
-  metadata?: Record<string, unknown>;
-}): Promise<void> {
-  const { error } = await supabase.from('access_audit').insert({
-    actor_id: params.actorId,
-    action: params.action,
-    resource: params.resource,
-    resource_id: params.resourceId,
-    country_code: params.countryCode,
-    metadata: params.metadata || {},
-  });
-
-  if (error) {
-    throw new Error(`Falha ao gravar registo obrigatório em access_audit: ${error.message}`);
-  }
-}
-
 export async function adminReviewDocument(
   adminId: string,
   isStrictAdmin: boolean,
   doc: BusinessDocument,
   nextStatus: DocumentStatus,
-  countryCode: string
+  _countryCode: string
 ): Promise<BusinessDocument> {
   if (!isStrictAdmin) {
     throw new Error('Operação bloqueada: apenas role = admin pode validar documentos e registar auditoria.');
@@ -652,20 +630,6 @@ export async function adminReviewDocument(
     throw new Error(error?.message || 'Erro ao actualizar o estado do documento.');
   }
 
-  await recordAccessAuditEvent({
-    actorId: adminId,
-    action: `document_${nextStatus}`,
-    resource: 'business_documents',
-    resourceId: doc.id,
-    countryCode,
-    metadata: {
-      business_id: doc.business_id,
-      document_type: doc.document_type,
-      previous_status: doc.status,
-      next_status: nextStatus,
-    },
-  });
-
   return data as BusinessDocument;
 }
 
@@ -677,7 +641,7 @@ export async function adminTransitionBusinessState(params: {
   nextVerificationStatus: BusinessVerificationStatus;
   reason?: string;
 }): Promise<Business> {
-  const { adminId, isStrictAdmin, business, nextStatus, nextVerificationStatus, reason } = params;
+  const { adminId, isStrictAdmin, business, nextStatus, nextVerificationStatus } = params;
 
   if (!isStrictAdmin) {
     throw new Error(
@@ -702,24 +666,6 @@ export async function adminTransitionBusinessState(params: {
   if (error || !data) {
     throw new Error(error?.message || 'Erro ao actualizar estado de verificação da empresa.');
   }
-
-  await recordAccessAuditEvent({
-    actorId: adminId,
-    action: isPublishing
-      ? 'business_approved_and_verified'
-      : `business_state_${nextStatus}_${nextVerificationStatus}`,
-    resource: 'businesses',
-    resourceId: business.id,
-    countryCode: business.country_code,
-    metadata: {
-      business_name: business.name,
-      previous_status: business.status,
-      next_status: nextStatus,
-      previous_verification: business.verification_status,
-      next_verification: nextVerificationStatus,
-      reason: reason || null,
-    },
-  });
 
   return data as Business;
 }
