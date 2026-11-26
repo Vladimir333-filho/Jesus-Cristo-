@@ -676,7 +676,13 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl relative border border-gray-100 my-8">
             <button
-              onClick={() => setAuthModalOpen(false)}
+              onClick={() => {
+                setAuthModalOpen(false);
+                setAuthMode('signin');
+                setIsPasswordRecovery(false);
+                setPasswordInput('');
+                setAuthMessage('');
+              }}
               className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 font-bold text-lg"
             >
               ✕
@@ -834,7 +840,9 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     setAuthMessage('');
-                    setAuthMode(authMode === 'signup' ? 'signin' : 'signup');
+                    setPasswordInput('');
+                    setIsPasswordRecovery(false);
+                    setAuthMode(authMode === 'signup' || authMode === 'recovery' ? 'signin' : 'signup');
                   }}
                   className="text-xs font-semibold text-[#0F4C5C] hover:underline"
                 >
