@@ -145,6 +145,7 @@ export default function App() {
         const { error } = await supabase.auth.updateUser({ password: passwordInput });
         if (error) throw error;
         setPasswordInput('');
+        await supabase.auth.signOut();
         setIsPasswordRecovery(false);
         setAuthMessage(lang === 'pt' ? 'Palavra-passe actualizada com sucesso. Já pode iniciar sessão.' : 'Password updated successfully. You can now sign in.');
         setAuthMode('signin');
@@ -765,6 +766,7 @@ export default function App() {
                 </>
               )}
 
+              {!isPasswordRecovery && (
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Email Corporativo</label>
                 <div className="relative">
@@ -779,6 +781,7 @@ export default function App() {
                   />
                 </div>
               </div>
+              )}
 
               {(authMode !== 'recovery' || isPasswordRecovery) && (
               <div>
