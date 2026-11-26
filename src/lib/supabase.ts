@@ -67,8 +67,16 @@ export function validateSupabaseConfigValues(rawUrlInput: string, rawKeyInput: s
   let parsedHost = '';
   try {
     const u = new URL(rawUrl);
-    if (u.protocol !== 'https:') {
-      throw new Error('URL deve usar HTTPS.');
+    if (
+      u.protocol !== 'https:' ||
+      u.origin !== EXPECTED_SUPABASE_URL ||
+      (u.pathname !== '/' && u.pathname !== '') ||
+      u.search ||
+      u.hash ||
+      u.username ||
+      u.password
+    ) {
+      throw new Error('URL deve corresponder exactamente ao projecto Supabase autorizado e usar HTTPS.');
     }
     parsedHost = u.host;
   } catch {
