@@ -641,7 +641,7 @@ export async function adminTransitionBusinessState(params: {
   nextVerificationStatus: BusinessVerificationStatus;
   reason?: string;
 }): Promise<Business> {
-  const { adminId, isStrictAdmin, business, nextStatus, nextVerificationStatus } = params;
+  const { isStrictAdmin, business, nextStatus, nextVerificationStatus } = params;
 
   if (!isStrictAdmin) {
     throw new Error(
