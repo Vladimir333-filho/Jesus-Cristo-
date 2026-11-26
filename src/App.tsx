@@ -149,7 +149,7 @@ export default function App() {
         setIsPasswordRecovery(false);
         setAuthMessage(lang === 'pt' ? 'Palavra-passe actualizada com sucesso. Já pode iniciar sessão.' : 'Password updated successfully. You can now sign in.');
         setAuthMode('signin');
-        setAuthModalOpen(false);
+        setAuthModalOpen(true);
       } else if (authMode === 'recovery') {
         const { error } = await supabase.auth.resetPasswordForEmail(emailInput.trim(), {
           redirectTo: `${window.location.origin}/`,
