@@ -93,65 +93,36 @@ export async function POST(request: Request): Promise<Response> {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: payment, error: lookupError } = await admin
-    .from('payments')
-    .select('id,amount_aoa,reference,status,provider_status')
-    .eq('provider', 'facipay')
-    .eq('external_transaction_id', externalTransactionId)
-    .maybeSingle();
+  const { data: result, error: processingError } = await admin.rpc(
+    'apply_facipay_payment_event',
+    {
+      p_external_transaction_id: externalTransactionId,
+      p_reference_number: referenceNumber,
+      p_amount: amount,
+      p_payment_status: paymentStatus,
+    }
+  );
 
-  if (lookupError) {
-    console.error('FaciPay webhook payment lookup failed');
-    return json({ error: 'Temporary payment lookup failure' }, 503);
+  if (processingError) {
+    // Do not log request bodies, signatures, payment references or credentials.
+    console.error('FaciPay webhook atomic processing failed');
+    return json({ error: 'Temporary payment processing failure' }, 503);
   }
 
-  if (!payment) {
-    // Acknowledge unknown IDs to avoid retry storms; no financial state is changed.
-    console.warn('FaciPay webhook received an unknown transaction');
-    return json({ received: true, processed: false });
+  if (!result || typeof result !== 'object' || result.received !== true) {
+    console.error('FaciPay webhook returned an invalid processing result');
+    return json({ error: 'Temporary payment processing failure' }, 503);
   }
 
-  const amountMatches = Number(payment.amount_aoa) === amount;
-  const referenceMatches = payment.reference === referenceNumber;
-  if (!amountMatches || !referenceMatches) {
-    // Never confirm a payment when the provider's amount or reference differs.
-    console.error('FaciPay webhook mismatch; payment left unchanged', {
-      amountMatches,
-      referenceMatches,
-    });
-    return json({ received: true, processed: false });
+  if (result.processed !== true && result.reason === 'payment_mismatch') {
+    // A mismatch is acknowledged, but never updates the financial record.
+    console.warn('FaciPay webhook rejected a payment mismatch');
   }
 
-  if (
-    payment.status !== 'pending' ||
-    payment.provider_status === 'CON' ||
-    payment.provider_status === 'CAN'
-  ) {
-    // CON/CAN are terminal. Duplicate or late events are acknowledged without replay.
-    return json({ received: true, processed: false });
-  }
-
-  const nextStatus = paymentStatus as FaciPayStatus;
-  const patch: {
-    provider_status: FaciPayStatus;
-    status?: 'confirmed' | 'rejected';
-  } = { provider_status: nextStatus };
-
-  if (nextStatus === 'CON') patch.status = 'confirmed';
-  if (nextStatus === 'CAN') patch.status = 'rejected';
-
-  const { error: updateError } = await admin
-    .from('payments')
-    .update(patch)
-    .eq('id', payment.id)
-    .eq('status', 'pending');
-
-  if (updateError) {
-    console.error('FaciPay webhook payment update failed');
-    return json({ error: 'Temporary payment update failure' }, 503);
-  }
-
-  return json({ received: true, processed: true });
+  return json({
+    received: true,
+    processed: result.processed === true,
+  });
 }
 
 export async function GET(): Promise<Response> {
