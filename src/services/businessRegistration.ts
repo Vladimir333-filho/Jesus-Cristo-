@@ -60,12 +60,12 @@ export const BUSINESS_SECTORS = [
   'Finanças, Banca & Seguros',
 ];
 
+// Values intentionally match the live business_documents.document_type CHECK constraint.
 export const DOCUMENT_TYPES = [
-  { value: 'alvara_comercial', labelPt: 'Alvará / Licença Comercial', labelEn: 'Commercial License' },
-  { value: 'nif_certidao_fiscal', labelPt: 'Cartão de Contribuinte (NIF / Tax ID)', labelEn: 'Tax Registration Certificate (NIF / Tax ID)' },
-  { value: 'certidao_registo_comercial', labelPt: 'Certidão de Registo Comercial / Diário da República', labelEn: 'Commercial Registry Certificate' },
-  { value: 'identificacao_representante', labelPt: 'Identificação do Representante Legal', labelEn: 'Legal Representative ID' },
-  { value: 'procuracao_autorizacao', labelPt: 'Procuração ou Pacto Social', labelEn: 'Power of Attorney / Articles of Association' },
+  { value: 'license', labelPt: 'Alvará / Licença Comercial', labelEn: 'Commercial License' },
+  { value: 'nif', labelPt: 'Cartão de Contribuinte (NIF / Certidão Fiscal)', labelEn: 'Tax Registration Certificate (NIF / Tax ID)' },
+  { value: 'identity', labelPt: 'Identificação do Representante Legal', labelEn: 'Legal Representative ID' },
+  { value: 'other', labelPt: 'Certidão de Registo Comercial, Procuração ou Pacto Social', labelEn: 'Commercial Registry Certificate, Power of Attorney or Articles of Association' },
 ];
 
 export interface UserPermissions {
