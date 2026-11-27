@@ -93,6 +93,7 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
   const [auditLogs, setAuditLogs] = useState<AccessAuditLog[]>([]);
 
   const [loading, setLoading] = useState(false);
+  const [loadedContextUserId, setLoadedContextUserId] = useState<string | null>(null);
   const contextRequestIdRef = useRef(0);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -148,6 +149,7 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
     } else {
       // Invalidate any in-flight request from the previous authenticated account.
       contextRequestIdRef.current += 1;
+      setLoadedContextUserId(null);
       setPermissions({
         profile: null,
         assignments: [],
@@ -164,6 +166,7 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
       setAdminBundles([]);
       setAuditLogs([]);
       setPreviewDoc(null);
+      setFeedback(null);
       setLoading(false);
       onUnreadCountChange?.(0);
     }
@@ -184,6 +187,29 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
 
     const requestId = ++contextRequestIdRef.current;
     const isCurrentRequest = () => requestId === contextRequestIdRef.current;
+    if (loadedContextUserId !== userId) {
+      // Do not leave the previous account's private business data on screen
+      // while the newly authenticated account is still loading.
+      setLoadedContextUserId(null);
+      setPermissions({
+        profile: null,
+        assignments: [],
+        isStrictAdmin: false,
+        isModerator: false,
+        isCountryManager: false,
+        assignedCountries: [],
+        canViewVerificationConsole: false,
+        canMutateVerification: false,
+        canAccessAudit: false,
+      });
+      setMyBundles([]);
+      setNotifications([]);
+      setAdminBundles([]);
+      setAuditLogs([]);
+      setPreviewDoc(null);
+      setFeedback(null);
+      onUnreadCountChange?.(0);
+    }
     setLoading(true);
     try {
       const perms = await fetchCurrentUserPermissions(userId);
@@ -217,9 +243,11 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
       } else {
         setAuditLogs([]);
       }
+      if (isCurrentRequest()) setLoadedContextUserId(userId);
     } catch (err: any) {
       if (isCurrentRequest()) {
         setFeedback({ type: 'error', text: err?.message || 'Erro ao carregar dados de registo.' });
+        setLoadedContextUserId(userId);
       }
     } finally {
       if (isCurrentRequest()) setLoading(false);
@@ -608,6 +636,17 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
             <ShieldCheck className="w-4 h-4 text-[#D4AF37]" />
             {lang === 'pt' ? 'Entrar ou Criar Conta' : 'Sign In or Create Account'}
           </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (loadedContextUserId !== user.id) {
+    return (
+      <section className="py-16 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8" aria-live="polite">
+        <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center text-sm text-gray-600 shadow-sm">
+          <div className="w-8 h-8 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          {lang === 'pt' ? 'A carregar os dados da conta...' : 'Loading account data...'}
         </div>
       </section>
     );
