@@ -142,13 +142,30 @@ export default function App() {
           setAuthMessage(lang === 'pt' ? 'A nova palavra-passe deve ter pelo menos 8 caracteres.' : 'The new password must contain at least 8 characters.');
           return;
         }
-        const { error } = await supabase.auth.updateUser({ password: passwordInput });
-        if (error) throw error;
+        const { error: updateError } = await supabase.auth.updateUser({ password: passwordInput });
+        if (updateError) throw updateError;
+
+        // The password is already changed at this point. A sign-out failure must
+        // never be reported as a password-update failure.
         setPasswordInput('');
-        await supabase.auth.signOut();
         setIsPasswordRecovery(false);
-        setAuthMessage(lang === 'pt' ? 'Palavra-passe actualizada com sucesso. Já pode iniciar sessão.' : 'Password updated successfully. You can now sign in.');
         setAuthMode('signin');
+
+        const { error: signOutError } = await supabase.auth.signOut();
+        if (signOutError) {
+          const { error: localSignOutError } = await supabase.auth.signOut({ scope: 'local' });
+          if (localSignOutError) {
+            setAuthMessage(
+              lang === 'pt'
+                ? 'A palavra-passe foi actualizada, mas não foi possível terminar a sessão automaticamente. Termine a sessão manualmente antes de continuar.'
+                : 'Your password was updated, but automatic sign-out failed. Please sign out manually before continuing.'
+            );
+            setAuthModalOpen(true);
+            return;
+          }
+        }
+
+        setAuthMessage(lang === 'pt' ? 'Palavra-passe actualizada com sucesso. Já pode iniciar sessão.' : 'Password updated successfully. You can now sign in.');
         setAuthModalOpen(true);
       } else if (authMode === 'recovery') {
         const { error } = await supabase.auth.resetPasswordForEmail(emailInput.trim(), {
@@ -676,12 +693,24 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl relative border border-gray-100 my-8">
             <button
-              onClick={() => {
+              onClick={async () => {
+                const abandoningRecovery = isPasswordRecovery;
                 setAuthModalOpen(false);
                 setAuthMode('signin');
                 setIsPasswordRecovery(false);
                 setPasswordInput('');
                 setAuthMessage('');
+                if (abandoningRecovery) {
+                  const { error } = await supabase.auth.signOut({ scope: 'local' });
+                  if (error) {
+                    setAuthMessage(
+                      lang === 'pt'
+                        ? 'Não foi possível encerrar a sessão de recuperação. Volte a fechar a sessão antes de utilizar a conta.'
+                        : 'The recovery session could not be closed. Please sign out before using the account.'
+                    );
+                    setAuthModalOpen(true);
+                  }
+                }
               }}
               className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 font-bold text-lg"
             >
