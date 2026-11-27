@@ -227,9 +227,7 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
       onUnreadCountChange?.(notifs.filter((n) => !n.read_at).length);
 
       if (perms.canViewVerificationConsole) {
-        const scopedBusinesses = await fetchBusinessesForGovernance(perms).catch(
-          () => [] as OwnerBusinessBundle[]
-        );
+        const scopedBusinesses = await fetchBusinessesForGovernance(perms);
         if (!isCurrentRequest()) return;
         setAdminBundles(scopedBusinesses);
       } else {
@@ -237,7 +235,7 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
       }
 
       if (perms.canAccessAudit) {
-        const logs = await fetchAuditLogs(perms, auditCountryFilter).catch(() => [] as AccessAuditLog[]);
+        const logs = await fetchAuditLogs(perms, auditCountryFilter);
         if (!isCurrentRequest()) return;
         setAuditLogs(logs);
       } else {
