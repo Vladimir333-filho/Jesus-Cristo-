@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock3, CreditCard, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock3, CreditCard, Lock, RefreshCw, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 type PaymentRow = {
@@ -27,11 +27,19 @@ const STATUS_LABELS = {
   en: { pending: 'Pending', confirmed: 'Confirmed', rejected: 'Rejected', refunded: 'Refunded' },
 };
 
-const METHOD_LABELS: Record<string, string> = {
-  bank_transfer: 'Transferência bancária',
-  multicaixa_express: 'Multicaixa Express',
-  unitel_money: 'Unitel Money',
-  other: 'Outro',
+const METHOD_LABELS = {
+  pt: {
+    bank_transfer: 'Transferência bancária',
+    multicaixa_express: 'Multicaixa Express',
+    unitel_money: 'Unitel Money',
+    other: 'Outro',
+  },
+  en: {
+    bank_transfer: 'Bank transfer',
+    multicaixa_express: 'Multicaixa Express',
+    unitel_money: 'Unitel Money',
+    other: 'Other',
+  },
 };
 
 export const PaymentsPortal: React.FC<PaymentsPortalProps> = ({ user, lang, onOpenAuth }) => {
@@ -239,7 +247,7 @@ export const PaymentsPortal: React.FC<PaymentsPortalProps> = ({ user, lang, onOp
                         <p className="text-[11px] text-slate-400 mt-1">{copy.payment} #{payment.id.slice(0, 8)}</p>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-3 text-xs">
-                        <Info label={copy.method} value={METHOD_LABELS[payment.method] || payment.method} />
+                        <Info label={copy.method} value={METHOD_LABELS[lang][payment.method as keyof typeof METHOD_LABELS.pt] || payment.method} />
                         <Info label={copy.reference} value={payment.reference || '—'} />
                         <Info label={copy.period} value={payment.period_start || payment.period_end ? `${formatDate(payment.period_start)} – ${formatDate(payment.period_end)}` : '—'} />
                         <Info label={copy.date} value={formatDate(payment.created_at)} />
@@ -272,6 +280,6 @@ const Info: React.FC<{ label: string; value: string }> = ({ label, value }) => (
 
 const LockIcon: React.FC = () => (
   <div className="mx-auto w-11 h-11 rounded-full bg-white/10 flex items-center justify-center">
-    <XCircle className="w-5 h-5 text-[#D4AF37]" />
+    <Lock className="w-5 h-5 text-[#D4AF37]" />
   </div>
 );
