@@ -244,6 +244,15 @@ export async function fetchMyBusinessBundles(ownerId: string): Promise<OwnerBusi
       .order('created_at', { ascending: false }),
   ]);
 
+  // Do not silently present an incomplete private vault as if no records exist.
+  if (privateRes.error || docsRes.error) {
+    throw new Error(
+      privateRes.error?.message ||
+      docsRes.error?.message ||
+      'Não foi possível carregar os dados privados e documentos da empresa.'
+    );
+  }
+
   const privateMap = new Map<string, BusinessPrivate>();
   ((privateRes.data as BusinessPrivate[]) || []).forEach((p) => privateMap.set(p.business_id, p));
 
@@ -587,6 +596,15 @@ export async function fetchBusinessesForGovernance(
     : Promise.resolve({ data: [], error: null });
 
   const [privateRes, docsRes] = await Promise.all([privatePromise, docsPromise]);
+
+  // Fail visibly when a privileged data query is denied or unavailable.
+  if (privateRes.error || docsRes.error) {
+    throw new Error(
+      privateRes.error?.message ||
+      docsRes.error?.message ||
+      'Não foi possível carregar os dados de governação e documentos.'
+    );
+  }
 
   const privateMap = new Map<string, BusinessPrivate>();
   ((privateRes.data as BusinessPrivate[]) || []).forEach((p) => privateMap.set(p.business_id, p));
