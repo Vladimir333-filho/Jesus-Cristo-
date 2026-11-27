@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { env } from 'node:process';
 import { createClient } from '@supabase/supabase-js';
 
 type FaciPayStatus = 'PEN' | 'CON' | 'CAN';
@@ -23,7 +25,7 @@ function json(body: Record<string, unknown>, status = 200): Response {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const secret = process.env.FACIPAY_WEBHOOK_SECRET;
+  const secret = env.FACIPAY_WEBHOOK_SECRET;
   if (!secret) {
     // Keep the endpoint closed until the webhook secret is configured in Vercel.
     return json({ error: 'Webhook is not configured' }, 503);
@@ -81,8 +83,8 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: 'Invalid payment event' }, 400);
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRoleKey) {
     return json({ error: 'Payment processing is not configured' }, 503);
   }
