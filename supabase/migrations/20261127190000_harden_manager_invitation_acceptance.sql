@@ -6,7 +6,7 @@ create or replace function public.accept_connect_manager_invitation(p_token text
 returns jsonb
 language plpgsql
 security definer
-set search_path = pg_catalog, public, extensions
+set search_path = ''
 as $function$
 declare
   v_uid uuid := auth.uid();
