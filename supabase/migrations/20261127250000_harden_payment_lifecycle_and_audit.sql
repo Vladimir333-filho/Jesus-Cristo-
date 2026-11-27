@@ -132,9 +132,11 @@ BEGIN
     END IF;
   END IF;
 
-  IF NEW.review_reason IS DISTINCT FROM OLD.review_reason AND NOT v_is_admin THEN
-    RAISE EXCEPTION 'Só um administrador pode registar o motivo da revisão'
-      USING ERRCODE = '42501';
+  IF NEW.review_reason IS DISTINCT FROM OLD.review_reason THEN
+    IF NOT v_is_admin OR NEW.status IS NOT DISTINCT FROM OLD.status THEN
+      RAISE EXCEPTION 'O motivo só pode ser registado por um administrador durante uma transição de estado'
+        USING ERRCODE = '42501';
+    END IF;
   END IF;
 
   IF NEW.status IS DISTINCT FROM OLD.status THEN
@@ -148,9 +150,13 @@ BEGIN
         END IF;
         NEW.confirmed_by := NULL;
         NEW.confirmed_at := COALESCE(NEW.confirmed_at, now());
+        NEW.refunded_by := OLD.refunded_by;
+        NEW.refunded_at := OLD.refunded_at;
       ELSIF v_is_admin THEN
         NEW.confirmed_by := auth.uid();
         NEW.confirmed_at := now();
+        NEW.refunded_by := OLD.refunded_by;
+        NEW.refunded_at := OLD.refunded_at;
       ELSE
         RAISE EXCEPTION 'Sem autorização para confirmar este pagamento'
           USING ERRCODE = '42501';
@@ -166,6 +172,8 @@ BEGIN
         END IF;
         NEW.confirmed_by := NULL;
         NEW.confirmed_at := NULL;
+        NEW.refunded_by := OLD.refunded_by;
+        NEW.refunded_at := OLD.refunded_at;
       ELSIF v_is_admin THEN
         IF NULLIF(btrim(NEW.review_reason), '') IS NULL THEN
           RAISE EXCEPTION 'Indique o motivo da rejeição do pagamento'
@@ -187,6 +195,8 @@ BEGIN
         RAISE EXCEPTION 'Indique o motivo do estorno'
           USING ERRCODE = '23514';
       END IF;
+      NEW.confirmed_by := OLD.confirmed_by;
+      NEW.confirmed_at := OLD.confirmed_at;
       NEW.refunded_by := auth.uid();
       NEW.refunded_at := now();
 
