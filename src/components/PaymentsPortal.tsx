@@ -113,6 +113,11 @@ export const PaymentsPortal: React.FC<PaymentsPortalProps> = ({ user, lang, onOp
       return;
     }
 
+    // Clear the previous account's data immediately when the session changes.
+    // This prevents stale financial records remaining visible during a new RLS query.
+    setPayments([]);
+    setIsAdmin(false);
+    setLoaded(false);
     setLoading(true);
     setError('');
 
