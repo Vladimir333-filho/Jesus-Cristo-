@@ -285,10 +285,6 @@ export async function registerBusinessWithPrivate(
       website: cleanWebsite || null,
       services: payload.services,
       languages: payload.languages.length > 0 ? payload.languages : ['pt'],
-      status: 'pending',
-      verification_status: 'unverified',
-      plan: 'free',
-      is_featured: false,
     })
     .select(BUSINESS_OWNER_FIELDS)
     .single();
@@ -423,23 +419,9 @@ export async function uploadBusinessPhoto(
   const { data: publicUrlData } = supabase.storage.from('business-photos').getPublicUrl(filePath);
   const publicUrl = publicUrlData.publicUrl;
 
-  // Preserve/reset pending+unverified state so owner updates on rejected/pending businesses satisfy businesses_owner_update
-  const updatePatch =
-    kind === 'logo'
-      ? {
-          logo_url: publicUrl,
-          status: 'pending' as BusinessStatus,
-          verification_status: 'unverified' as BusinessVerificationStatus,
-          plan: 'free' as const,
-          is_featured: false,
-        }
-      : {
-          cover_url: publicUrl,
-          status: 'pending' as BusinessStatus,
-          verification_status: 'unverified' as BusinessVerificationStatus,
-          plan: 'free' as const,
-          is_featured: false,
-        };
+  // Owners may update the image URL only. Administrative fields
+  // (status, verification, plan and featuring) remain database-controlled.
+  const updatePatch = kind === 'logo' ? { logo_url: publicUrl } : { cover_url: publicUrl };
 
   const { error: updateErr } = await supabase
     .from('businesses')
