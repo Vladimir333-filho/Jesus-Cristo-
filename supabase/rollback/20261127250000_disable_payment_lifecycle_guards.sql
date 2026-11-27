@@ -9,6 +9,7 @@ DROP TRIGGER IF EXISTS payments_integrity_guard ON public.payments;
 
 DROP FUNCTION IF EXISTS public.audit_payment_lifecycle();
 DROP FUNCTION IF EXISTS public.guard_payment_integrity();
+DROP FUNCTION IF EXISTS public.apply_facipay_payment_event(text, text, integer, text);
 
 -- Keep public.payment_audit and all payment metadata intact for forensic review.
 -- Keep validated CHECK constraints and the idempotency index; removing them
