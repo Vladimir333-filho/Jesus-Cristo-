@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Globe, Menu, X, Building2, Briefcase, TrendingUp, Calendar, ShieldCheck, LogIn, FileCheck2 } from 'lucide-react';
+import { Globe, Menu, X, Building2, Briefcase, TrendingUp, Calendar, ShieldCheck, LogIn, FileCheck2, CreditCard } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface HeaderProps {
@@ -27,6 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'home', labelPt: 'Início', labelEn: 'Home', icon: Globe },
     { id: 'directory', labelPt: 'Directório', labelEn: 'Directory', icon: Building2 },
     { id: 'registration', labelPt: 'Registo & Verificação', labelEn: 'Registration', icon: FileCheck2 },
+    { id: 'payments', labelPt: 'Financeiro', labelEn: 'Finance', icon: CreditCard },
     { id: 'opportunities', labelPt: 'Oportunidades', labelEn: 'Opportunities', icon: Briefcase },
     { id: 'investors', labelPt: 'Investidores', labelEn: 'Investors', icon: TrendingUp },
     { id: 'events', labelPt: 'Eventos', labelEn: 'Events', icon: Calendar },
