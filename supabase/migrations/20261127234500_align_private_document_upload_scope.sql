@@ -1,5 +1,6 @@
 -- P07: align private document Storage upload with metadata ownership.
--- Existing private read/review/delete policies remain unchanged.
+-- Preserve existing single-segment filenames while restricting new uploads to
+-- the owning business folder and safe PDF/JPG/PNG object names.
 BEGIN;
 
 ALTER TABLE public.business_documents
@@ -7,7 +8,7 @@ ALTER TABLE public.business_documents
   CHECK (
     storage_path ~ (
       '^' || business_id::text ||
-      '/[0-9]+_[A-Za-z0-9_-]{1,100}[.](pdf|jpg|png)$'
+      '/[A-Za-z0-9_.-]{1,180}[.](pdf|jpg|png)$'
     )
   );
 
