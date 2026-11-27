@@ -346,10 +346,6 @@ export async function updatePendingBusinessWithPrivate(
       website: cleanWebsite || null,
       services: payload.services,
       languages: payload.languages.length > 0 ? payload.languages : ['pt'],
-      status: 'pending',
-      verification_status: 'unverified',
-      plan: 'free',
-      is_featured: false,
     })
     .eq('id', businessId)
     .eq('owner_id', ownerId)
