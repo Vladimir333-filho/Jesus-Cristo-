@@ -8,6 +8,7 @@ import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { HeroCinematic } from './components/HeroCinematic';
 import { BusinessRegistrationPortal } from './components/BusinessRegistrationPortal';
+import { PaymentsPortal } from './components/PaymentsPortal';
 import { supabase, supabaseConfigStatus } from './lib/supabase';
 import { fetchActiveCountries, syncOwnProfileAfterSignup } from './services/businessRegistration';
 import { Building2, Briefcase, TrendingUp, Calendar, ShieldCheck, Search, CheckCircle, ExternalLink, ArrowRight, Lock, User, Mail, Phone, Globe, Award, Inbox, MapPin, X, AlertTriangle } from 'lucide-react';
@@ -579,6 +580,14 @@ export default function App() {
             onDirectoryRefresh={fetchVerifiedBusinesses}
             onNavigateToDirectory={() => setCurrentTab('directory')}
             onUnreadCountChange={setUnreadNotificationsCount}
+          />
+        )}
+
+        {currentTab === 'payments' && (
+          <PaymentsPortal
+            user={user}
+            lang={lang}
+            onOpenAuth={() => setAuthModalOpen(true)}
           />
         )}
 
