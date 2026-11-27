@@ -432,6 +432,14 @@ export async function submitPrivateDocument(
   documentType: string,
   file: File
 ): Promise<BusinessDocument> {
+  const allowedDocumentTypes = DOCUMENT_TYPES.map((item) => item.value);
+  if (!allowedDocumentTypes.includes(documentType)) {
+    throw new Error('Tipo de documento inválido.');
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(businessId)) {
+    throw new Error('Identificador de empresa inválido.');
+  }
+
   const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
   if (!allowedTypes.includes(file.type)) {
     throw new Error('Formato não permitido. Envie PDF, JPG ou PNG para documentos legais.');
