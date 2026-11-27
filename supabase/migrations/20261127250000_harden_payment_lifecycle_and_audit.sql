@@ -111,7 +111,8 @@ BEGIN
   -- A payment is a financial record: its commercial identity and amount never
   -- change in place, even for administrators. Corrections require a separate
   -- audited workflow rather than rewriting the original transaction.
-  IF NEW.business_id IS DISTINCT FROM OLD.business_id
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.business_id IS DISTINCT FROM OLD.business_id
      OR NEW.amount_aoa IS DISTINCT FROM OLD.amount_aoa
      OR NEW.method IS DISTINCT FROM OLD.method
      OR NEW.reference IS DISTINCT FROM OLD.reference
@@ -190,6 +191,8 @@ BEGIN
         END IF;
         NEW.confirmed_by := NULL;
         NEW.confirmed_at := NULL;
+        NEW.refunded_by := OLD.refunded_by;
+        NEW.refunded_at := OLD.refunded_at;
       ELSE
         RAISE EXCEPTION 'Sem autorização para rejeitar este pagamento'
           USING ERRCODE = '42501';
@@ -244,7 +247,7 @@ DECLARE
   v_source text;
   v_action text;
 BEGIN
-  IF v_role IN ('service_role', 'supabase_admin') THEN
+  IF current_setting('app.payment_audit_source', true) = 'facipay_webhook' THEN
     v_source := 'facipay_webhook';
   ELSIF public.is_platform_admin_only() THEN
     v_source := 'admin';
@@ -304,5 +307,83 @@ DROP TRIGGER IF EXISTS payments_lifecycle_audit ON public.payments;
 CREATE TRIGGER payments_lifecycle_audit
   AFTER INSERT OR UPDATE ON public.payments
   FOR EACH ROW EXECUTE FUNCTION public.audit_payment_lifecycle();
+
+
+-- Atomic, row-locked webhook processor. Only the backend service role may call it.
+CREATE OR REPLACE FUNCTION public.apply_facipay_payment_event(
+  p_external_transaction_id text,
+  p_reference_number text,
+  p_amount integer,
+  p_payment_status text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path TO ''
+AS $function$
+DECLARE
+  v_payment public.payments%ROWTYPE;
+  v_next_status text;
+BEGIN
+  IF current_user <> 'service_role' THEN
+    RAISE EXCEPTION 'Apenas o serviço de pagamentos pode processar eventos FaciPay'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF p_external_transaction_id IS NULL
+     OR char_length(btrim(p_external_transaction_id)) NOT BETWEEN 1 AND 200
+     OR p_reference_number IS NULL
+     OR char_length(btrim(p_reference_number)) NOT BETWEEN 1 AND 200
+     OR p_amount IS NULL OR p_amount <= 0
+     OR p_payment_status NOT IN ('PEN', 'CON', 'CAN') THEN
+    RAISE EXCEPTION 'Evento FaciPay inválido'
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT * INTO v_payment
+    FROM public.payments
+   WHERE provider = 'facipay'
+     AND external_transaction_id = p_external_transaction_id
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('received', true, 'processed', false, 'reason', 'unknown_transaction');
+  END IF;
+
+  IF v_payment.amount_aoa <> p_amount
+     OR v_payment.reference IS DISTINCT FROM p_reference_number THEN
+    RETURN jsonb_build_object('received', true, 'processed', false, 'reason', 'payment_mismatch');
+  END IF;
+
+  IF v_payment.status <> 'pending'
+     OR v_payment.provider_status IN ('CON', 'CAN') THEN
+    RETURN jsonb_build_object('received', true, 'processed', false, 'reason', 'terminal_or_already_processed');
+  END IF;
+
+  IF v_payment.provider_status IS NOT DISTINCT FROM p_payment_status THEN
+    RETURN jsonb_build_object('received', true, 'processed', false, 'reason', 'duplicate_event');
+  END IF;
+
+  v_next_status := CASE p_payment_status
+    WHEN 'CON' THEN 'confirmed'
+    WHEN 'CAN' THEN 'rejected'
+    ELSE 'pending'
+  END;
+
+  PERFORM set_config('app.payment_audit_source', 'facipay_webhook', true);
+
+  UPDATE public.payments
+     SET provider_status = p_payment_status,
+         status = v_next_status
+   WHERE id = v_payment.id;
+
+  RETURN jsonb_build_object('received', true, 'processed', true);
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.apply_facipay_payment_event(text, text, integer, text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.apply_facipay_payment_event(text, text, integer, text)
+  TO service_role;
 
 COMMIT;
