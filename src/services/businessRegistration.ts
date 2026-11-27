@@ -429,7 +429,18 @@ export async function uploadBusinessPhoto(
     .eq('id', businessId);
 
   if (updateErr) {
-    throw new Error(`Imagem carregada, mas erro ao associar à empresa: ${updateErr.message}`);
+    // Compensate for a failed database association to avoid leaving an
+    // unreferenced public object behind.
+    const { error: cleanupError } = await supabase.storage
+      .from('business-photos')
+      .remove([filePath]);
+
+    if (cleanupError) {
+      throw new Error(
+        `Imagem carregada, mas não associada à empresa (${updateErr.message}) e a limpeza falhou (${cleanupError.message}). Ficheiro para revisão: ${filePath}`
+      );
+    }
+    throw new Error(`Não foi possível associar a imagem à empresa (${updateErr.message}). O ficheiro temporário foi removido.`);
   }
 
   return publicUrl;
@@ -474,7 +485,19 @@ export async function submitPrivateDocument(
     .single();
 
   if (insertError || !docRecord) {
-    throw new Error(insertError?.message || 'Erro ao registar metadados do documento.');
+    // The Storage upload and metadata insert are separate requests. If the
+    // database write fails, compensate by removing the just-uploaded object.
+    const { error: cleanupError } = await supabase.storage
+      .from('business-documents')
+      .remove([storagePath]);
+
+    const detail = insertError?.message || 'Erro ao registar metadados do documento.';
+    if (cleanupError) {
+      throw new Error(
+        `Não foi possível registar o documento (${detail}) nem remover o ficheiro órfão (${cleanupError.message}). Caminho para revisão administrativa: ${storagePath}`
+      );
+    }
+    throw new Error(`${detail} O ficheiro temporário foi removido do armazenamento.`);
   }
 
   return docRecord as BusinessDocument;
