@@ -266,14 +266,13 @@ export async function registerBusinessWithPrivate(
   payload: BusinessRegistrationPayload,
   privatePayload: BusinessPrivatePayload
 ): Promise<OwnerBusinessBundle> {
+  // The database derives ownership from auth.uid(); ownerId is retained for API compatibility.
+  void ownerId;
   const cleanWebsite = sanitizePublicUrl(payload.website);
   const slug = buildUniqueSlug(payload.name);
 
-  // Strictly enforces businesses_owner_create RLS policy
-  const { data: insertedBusiness, error: businessError } = await supabase
-    .from('businesses')
-    .insert({
-      owner_id: ownerId,
+  const { data, error } = await supabase.rpc('register_business_with_private', {
+    p_business: {
       name: payload.name.trim(),
       slug,
       country_code: payload.country_code,
@@ -290,36 +289,22 @@ export async function registerBusinessWithPrivate(
       website: cleanWebsite || null,
       services: payload.services,
       languages: payload.languages.length > 0 ? payload.languages : ['pt'],
-    })
-    .select(BUSINESS_OWNER_FIELDS)
-    .single();
-
-  if (businessError || !insertedBusiness) {
-    throw new Error(businessError?.message || 'Não foi possível registar a empresa.');
-  }
-
-  const business = insertedBusiness as Business;
-
-  // Save sensitive legal identifiers exclusively in business_private (RLS owner/admin protected)
-  const { data: insertedPrivate, error: privateError } = await supabase
-    .from('business_private')
-    .upsert({
-      business_id: business.id,
+    },
+    p_private: {
       nif: privatePayload.nif.trim() || null,
       license_number: privatePayload.license_number.trim() || null,
       owner_notes: privatePayload.owner_notes?.trim() || null,
-      updated_at: new Date().toISOString(),
-    })
-    .select(BUSINESS_PRIVATE_FIELDS)
-    .single();
+    },
+  });
 
-  if (privateError) {
-    throw new Error(`Empresa criada, mas erro ao guardar dados legais privados: ${privateError.message}`);
+  if (error || !data) {
+    throw new Error(error?.message || 'Não foi possível registar a empresa e os dados legais.');
   }
 
+  const result = data as unknown as { business: Business; privateData: BusinessPrivate };
   return {
-    business,
-    privateData: (insertedPrivate as BusinessPrivate) || null,
+    business: result.business,
+    privateData: result.privateData || null,
     documents: [],
   };
 }
@@ -330,12 +315,13 @@ export async function updatePendingBusinessWithPrivate(
   payload: BusinessRegistrationPayload,
   privatePayload: BusinessPrivatePayload
 ): Promise<OwnerBusinessBundle> {
+  // The database verifies auth.uid(), ownership and the editable business state.
+  void ownerId;
   const cleanWebsite = sanitizePublicUrl(payload.website);
 
-  // Strictly satisfies businesses_owner_update RLS policy for pending/rejected resubmissions
-  const { data: updatedBusiness, error: businessError } = await supabase
-    .from('businesses')
-    .update({
+  const { data, error } = await supabase.rpc('update_pending_business_with_private', {
+    p_business_id: businessId,
+    p_business: {
       name: payload.name.trim(),
       country_code: payload.country_code,
       province: payload.province.trim(),
@@ -351,44 +337,32 @@ export async function updatePendingBusinessWithPrivate(
       website: cleanWebsite || null,
       services: payload.services,
       languages: payload.languages.length > 0 ? payload.languages : ['pt'],
-    })
-    .eq('id', businessId)
-    .eq('owner_id', ownerId)
-    .select(BUSINESS_OWNER_FIELDS)
-    .single();
-
-  if (businessError || !updatedBusiness) {
-    throw new Error(
-      businessError?.message ||
-        'Apenas empresas pendentes ou rejeitadas (não verificadas) podem ser editadas e resubmetidas pelo proprietário.'
-    );
-  }
-
-  const { data: updatedPrivate, error: privateError } = await supabase
-    .from('business_private')
-    .upsert({
-      business_id: businessId,
+    },
+    p_private: {
       nif: privatePayload.nif.trim() || null,
       license_number: privatePayload.license_number.trim() || null,
       owner_notes: privatePayload.owner_notes?.trim() || null,
-      updated_at: new Date().toISOString(),
-    })
-    .select(BUSINESS_PRIVATE_FIELDS)
-    .single();
+    },
+  });
 
-  if (privateError) {
-    throw new Error(privateError.message);
+  if (error || !data) {
+    throw new Error(error?.message || 'Não foi possível actualizar a empresa e os dados legais.');
   }
 
-  const { data: docs } = await supabase
+  const result = data as unknown as { business: Business; privateData: BusinessPrivate };
+  const { data: docs, error: docsError } = await supabase
     .from('business_documents')
     .select(BUSINESS_DOCUMENT_FIELDS)
     .eq('business_id', businessId)
     .order('created_at', { ascending: false });
 
+  if (docsError) {
+    throw new Error(`Empresa actualizada, mas não foi possível carregar os documentos: ${docsError.message}`);
+  }
+
   return {
-    business: updatedBusiness as Business,
-    privateData: (updatedPrivate as BusinessPrivate) || null,
+    business: result.business,
+    privateData: result.privateData || null,
     documents: (docs as BusinessDocument[]) || [],
   };
 }
