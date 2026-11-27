@@ -170,6 +170,11 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
       setLoading(false);
       onUnreadCountChange?.(0);
     }
+
+    return () => {
+      // Also invalidate requests when the account changes or this portal unmounts.
+      contextRequestIdRef.current += 1;
+    };
   }, [user?.id]);
 
   const loadCountries = async () => {
