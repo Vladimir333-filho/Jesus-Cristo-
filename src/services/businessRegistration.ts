@@ -184,11 +184,16 @@ export async function fetchCurrentUserPermissions(userId: string): Promise<UserP
       .from('connect_manager_assignments')
       .select('id, user_id, country_code, manager_role, status, assigned_by, assigned_at, updated_at')
       .eq('user_id', userId)
-      .eq('status', 'active'),
+      .eq('status', 'active')
+      .in('manager_role', ['national_admin', 'connect_manager']),
   ]);
 
   const profile = (profileRes.data as Profile) || null;
-  const assignments = (assignRes.data as ConnectManagerAssignment[]) || [];
+  const assignments = ((assignRes.data as ConnectManagerAssignment[]) || []).filter(
+    (assignment) =>
+      assignment.status === 'active' &&
+      ['national_admin', 'connect_manager'].includes(assignment.manager_role)
+  );
   const role = profile?.role;
 
   const isStrictAdmin = role === 'admin';
