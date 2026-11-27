@@ -24,6 +24,10 @@ WITH CHECK (
     FROM public.businesses b
     WHERE b.id::text = (storage.foldername(objects.name))[1]
       AND b.owner_id = (SELECT auth.uid())
+      AND objects.name ~ (
+        '^' || b.id::text ||
+        '/[A-Za-z0-9_.-]{1,180}[.](pdf|jpg|png)$'
+      )
   )
 );
 
