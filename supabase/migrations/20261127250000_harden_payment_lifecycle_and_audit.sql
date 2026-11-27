@@ -23,6 +23,10 @@ ALTER TABLE public.payments
   ADD CONSTRAINT payments_external_transaction_pair_check
     CHECK ((provider IS NULL AND external_transaction_id IS NULL)
         OR (provider IS NOT NULL AND external_transaction_id IS NOT NULL)) NOT VALID,
+  ADD CONSTRAINT payments_external_transaction_id_length_check
+    CHECK (external_transaction_id IS NULL OR char_length(btrim(external_transaction_id)) BETWEEN 1 AND 200) NOT VALID,
+  ADD CONSTRAINT payments_provider_status_requires_provider_check
+    CHECK (provider_status IS NULL OR provider = 'facipay') NOT VALID,
   ADD CONSTRAINT payments_review_reason_length_check
     CHECK (review_reason IS NULL OR char_length(review_reason) <= 1000) NOT VALID;
 
@@ -32,6 +36,8 @@ ALTER TABLE public.payments
   VALIDATE CONSTRAINT payments_provider_check,
   VALIDATE CONSTRAINT payments_provider_status_check,
   VALIDATE CONSTRAINT payments_external_transaction_pair_check,
+  VALIDATE CONSTRAINT payments_external_transaction_id_length_check,
+  VALIDATE CONSTRAINT payments_provider_status_requires_provider_check,
   VALIDATE CONSTRAINT payments_review_reason_length_check;
 
 CREATE UNIQUE INDEX IF NOT EXISTS payments_provider_external_transaction_uidx
@@ -86,12 +92,16 @@ BEGIN
         USING ERRCODE = '42501';
     END IF;
 
-    IF NOT v_is_service AND NOT v_is_admin
+    IF NEW.review_reason IS NOT NULL THEN
+      RAISE EXCEPTION 'O motivo de revisão só pode ser registado durante uma decisão administrativa'
+        USING ERRCODE = '42501';
+    END IF;
+
+    IF NOT v_is_service
        AND (NEW.provider IS NOT NULL
          OR NEW.external_transaction_id IS NOT NULL
-         OR NEW.provider_status IS NOT NULL
-         OR NEW.review_reason IS NOT NULL) THEN
-      RAISE EXCEPTION 'Os dados de integração e revisão são reservados ao servidor'
+         OR NEW.provider_status IS NOT NULL) THEN
+      RAISE EXCEPTION 'Os dados de integração do fornecedor são reservados ao servidor'
         USING ERRCODE = '42501';
     END IF;
 
