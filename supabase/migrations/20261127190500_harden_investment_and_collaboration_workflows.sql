@@ -57,9 +57,16 @@ BEGIN
         USING ERRCODE = '42501';
     END IF;
 
-    IF NEW.status = 'published' AND OLD.status IS DISTINCT FROM 'published' THEN
-      NEW.published_at := now();
-    ELSIF NEW.status <> 'published' AND OLD.status IS DISTINCT FROM 'published' THEN
+    IF NEW.status = 'published' THEN
+      IF OLD.status IS DISTINCT FROM 'published' THEN
+        NEW.published_at := now();
+      ELSE
+        NEW.published_at := OLD.published_at;
+      END IF;
+    ELSIF OLD.status = 'published' THEN
+      -- Preserve the original publication timestamp when closing or archiving.
+      NEW.published_at := OLD.published_at;
+    ELSE
       NEW.published_at := NULL;
     END IF;
   END IF;
