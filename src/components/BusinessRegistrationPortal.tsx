@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Building2,
   CheckCircle2,
@@ -93,6 +93,7 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
   const [auditLogs, setAuditLogs] = useState<AccessAuditLog[]>([]);
 
   const [loading, setLoading] = useState(false);
+  const contextRequestIdRef = useRef(0);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Registration / Edit Form State
@@ -145,10 +146,25 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
     if (user?.id) {
       loadUserContext();
     } else {
+      // Invalidate any in-flight request from the previous authenticated account.
+      contextRequestIdRef.current += 1;
+      setPermissions({
+        profile: null,
+        assignments: [],
+        isStrictAdmin: false,
+        isModerator: false,
+        isCountryManager: false,
+        assignedCountries: [],
+        canViewVerificationConsole: false,
+        canMutateVerification: false,
+        canAccessAudit: false,
+      });
       setMyBundles([]);
       setNotifications([]);
       setAdminBundles([]);
       setAuditLogs([]);
+      setPreviewDoc(null);
+      setLoading(false);
       onUnreadCountChange?.(0);
     }
   }, [user?.id]);
@@ -163,16 +179,22 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
   };
 
   const loadUserContext = async () => {
-    if (!user?.id) return;
+    const userId = user?.id;
+    if (!userId) return;
+
+    const requestId = ++contextRequestIdRef.current;
+    const isCurrentRequest = () => requestId === contextRequestIdRef.current;
     setLoading(true);
     try {
-      const perms = await fetchCurrentUserPermissions(user.id);
+      const perms = await fetchCurrentUserPermissions(userId);
+      if (!isCurrentRequest()) return;
       setPermissions(perms);
 
       const [bundles, notifs] = await Promise.all([
-        fetchMyBusinessBundles(user.id),
-        fetchUserNotifications(user.id).catch(() => [] as NotificationItem[]),
+        fetchMyBusinessBundles(userId),
+        fetchUserNotifications(userId).catch(() => [] as NotificationItem[]),
       ]);
+      if (!isCurrentRequest()) return;
 
       setMyBundles(bundles);
       setNotifications(notifs);
@@ -182,17 +204,25 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
         const scopedBusinesses = await fetchBusinessesForGovernance(perms).catch(
           () => [] as OwnerBusinessBundle[]
         );
+        if (!isCurrentRequest()) return;
         setAdminBundles(scopedBusinesses);
+      } else {
+        setAdminBundles([]);
       }
 
       if (perms.canAccessAudit) {
         const logs = await fetchAuditLogs(perms, auditCountryFilter).catch(() => [] as AccessAuditLog[]);
+        if (!isCurrentRequest()) return;
         setAuditLogs(logs);
+      } else {
+        setAuditLogs([]);
       }
     } catch (err: any) {
-      setFeedback({ type: 'error', text: err?.message || 'Erro ao carregar dados de registo.' });
+      if (isCurrentRequest()) {
+        setFeedback({ type: 'error', text: err?.message || 'Erro ao carregar dados de registo.' });
+      }
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) setLoading(false);
     }
   };
 
