@@ -406,7 +406,13 @@ export async function uploadBusinessPhoto(
     throw new Error('A imagem excede o limite máximo de 5 MB.');
   }
 
-  const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+  // Derive the stored extension from the accepted MIME type, not the user-supplied filename.
+  const photoExtension: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+  };
+  const ext = photoExtension[file.type];
   const filePath = `${businessId}/${kind}_${Date.now()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
@@ -460,8 +466,15 @@ export async function submitPrivateDocument(
     throw new Error('O documento excede o limite máximo de 10 MB.');
   }
 
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const storagePath = `${businessId}/${Date.now()}_${safeName}`;
+  // Keep a sanitized display stem, but enforce the extension from the accepted MIME type.
+  const documentExtension: Record<string, string> = {
+    'application/pdf': 'pdf',
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+  };
+  const originalName = file.name.replace(/\\.[^.]*$/, '');
+  const safeName = originalName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100) || 'documento';
+  const storagePath = `${businessId}/${Date.now()}_${safeName}.${documentExtension[file.type]}`;
 
   const { error: uploadError } = await supabase.storage
     .from('business-documents')
