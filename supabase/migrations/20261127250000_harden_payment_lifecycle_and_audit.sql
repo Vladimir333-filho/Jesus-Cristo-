@@ -73,7 +73,6 @@ SECURITY DEFINER
 SET search_path TO ''
 AS $function$
 DECLARE
-  v_role text := COALESCE(auth.role(), '');
   v_is_service boolean := COALESCE(auth.role(), '') IN ('service_role', 'supabase_admin');
   v_is_admin boolean := public.is_platform_admin_only();
 BEGIN
@@ -142,9 +141,9 @@ BEGIN
   IF NEW.status IS DISTINCT FROM OLD.status THEN
     IF OLD.status = 'pending' AND NEW.status = 'confirmed' THEN
       IF v_is_service THEN
-        IF NEW.provider <> 'facipay'
+        IF NEW.provider IS DISTINCT FROM 'facipay'
            OR NEW.external_transaction_id IS NULL
-           OR NEW.provider_status <> 'CON' THEN
+           OR NEW.provider_status IS DISTINCT FROM 'CON' THEN
           RAISE EXCEPTION 'Confirmação automática exige evento FaciPay CON validado'
             USING ERRCODE = '42501';
         END IF;
@@ -164,9 +163,9 @@ BEGIN
 
     ELSIF OLD.status = 'pending' AND NEW.status = 'rejected' THEN
       IF v_is_service THEN
-        IF NEW.provider <> 'facipay'
+        IF NEW.provider IS DISTINCT FROM 'facipay'
            OR NEW.external_transaction_id IS NULL
-           OR NEW.provider_status <> 'CAN' THEN
+           OR NEW.provider_status IS DISTINCT FROM 'CAN' THEN
           RAISE EXCEPTION 'Rejeição automática exige evento FaciPay CAN validado'
             USING ERRCODE = '42501';
         END IF;
