@@ -17,6 +17,33 @@ type FaciPayWebhook = {
 
 const MAX_BODY_BYTES = 64 * 1024;
 
+class PayloadTooLargeError extends Error {}
+
+async function readLimitedBody(request: Request): Promise<Buffer> {
+  if (!request.body) return Buffer.alloc(0);
+
+  const reader = request.body.getReader();
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_BODY_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new PayloadTooLargeError();
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return Buffer.concat(chunks, totalBytes);
+}
+
 function json(body: Record<string, unknown>, status = 200): Response {
   return Response.json(body, {
     status,
@@ -38,12 +65,14 @@ export async function POST(request: Request): Promise<Response> {
 
   let rawBody: Buffer;
   try {
-    const bytes = Buffer.from(await request.arrayBuffer());
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_BODY_BYTES) {
+    rawBody = await readLimitedBody(request);
+    if (rawBody.byteLength === 0) {
+      return json({ error: 'Invalid payload size' }, 400);
+    }
+  } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
       return json({ error: 'Invalid payload size' }, 413);
     }
-    rawBody = bytes;
-  } catch {
     return json({ error: 'Unable to read request body' }, 400);
   }
 
