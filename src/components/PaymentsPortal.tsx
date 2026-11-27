@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock3, CreditCard, Lock, RefreshCw, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -48,6 +48,7 @@ export const PaymentsPortal: React.FC<PaymentsPortalProps> = ({ user, lang, onOp
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const requestIdRef = useRef(0);
 
   const copy = lang === 'pt'
     ? {
@@ -106,10 +107,14 @@ export const PaymentsPortal: React.FC<PaymentsPortalProps> = ({ user, lang, onOp
   }), [lang]);
 
   const loadPayments = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+
     if (!user?.id) {
       setPayments([]);
       setIsAdmin(false);
       setLoaded(true);
+      setLoading(false);
+      setError('');
       return;
     }
 
@@ -128,6 +133,8 @@ export const PaymentsPortal: React.FC<PaymentsPortalProps> = ({ user, lang, onOp
         .eq('id', user.id)
         .maybeSingle();
 
+      // Ignore responses from an earlier account or an outdated refresh.
+      if (requestId !== requestIdRef.current) return;
       setIsAdmin(profile?.role === 'admin');
 
       // RLS on public.payments limits this query to the business owner or platform admin.
@@ -139,12 +146,13 @@ export const PaymentsPortal: React.FC<PaymentsPortalProps> = ({ user, lang, onOp
         .limit(100);
 
       if (queryError) throw queryError;
+      if (requestId !== requestIdRef.current) return;
       setPayments((data || []) as unknown as PaymentRow[]);
       setLoaded(true);
     } catch {
-      setError(copy.failed);
+      if (requestId === requestIdRef.current) setError(copy.failed);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }, [user?.id, copy.failed]);
 
