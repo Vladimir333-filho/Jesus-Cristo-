@@ -472,7 +472,7 @@ export async function submitPrivateDocument(
     'image/jpeg': 'jpg',
     'image/png': 'png',
   };
-  const originalName = file.name.replace(/\\.[^.]*$/, '');
+  const originalName = file.name.replace(/\.[^.]*$/, '');
   const safeName = originalName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100) || 'documento';
   const storagePath = `${businessId}/${Date.now()}_${safeName}.${documentExtension[file.type]}`;
 
