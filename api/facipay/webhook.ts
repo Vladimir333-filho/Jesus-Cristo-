@@ -114,11 +114,14 @@ export async function POST(request: Request): Promise<Response> {
 
   const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
   const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) {
+  const expectedSupabaseUrl = 'https://ydqekbhstwlbxhfkuplz.supabase.co';
+  // Never send a privileged service key to an unintended host because of
+  // a misconfigured environment variable.
+  if (!supabaseUrl || supabaseUrl !== expectedSupabaseUrl || !serviceRoleKey) {
     return json({ error: 'Payment processing is not configured' }, 503);
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey, {
+  const admin = createClient(expectedSupabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
