@@ -73,11 +73,13 @@ export default function App() {
   });
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
+    let isActive = true;
+    let authEventVersion = 0;
 
+    // Subscribe before reading the initial session. If an auth event arrives
+    // while getSession() is pending, its newer state must win.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      authEventVersion += 1;
       setUser(session?.user ?? null);
       if (event === 'PASSWORD_RECOVERY') {
         setAuthMode('recovery');
@@ -87,10 +89,25 @@ export default function App() {
       }
     });
 
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (isActive && authEventVersion === 0) {
+          setUser(session?.user ?? null);
+        }
+      })
+      .catch(() => {
+        if (isActive && authEventVersion === 0) {
+          setUser(null);
+        }
+      });
+
     fetchVerifiedBusinesses();
     fetchActiveCountries().then(setActiveCountries).catch(() => setActiveCountries([]));
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isActive = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchVerifiedBusinesses = async () => {
