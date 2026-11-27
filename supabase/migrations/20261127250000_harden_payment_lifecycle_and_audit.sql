@@ -243,7 +243,6 @@ SECURITY DEFINER
 SET search_path TO ''
 AS $function$
 DECLARE
-  v_role text := COALESCE(auth.role(), '');
   v_source text;
   v_action text;
 BEGIN
@@ -335,6 +334,7 @@ BEGIN
      OR p_reference_number IS NULL
      OR char_length(btrim(p_reference_number)) NOT BETWEEN 1 AND 200
      OR p_amount IS NULL OR p_amount <= 0
+     OR p_payment_status IS NULL
      OR p_payment_status NOT IN ('PEN', 'CON', 'CAN') THEN
     RAISE EXCEPTION 'Evento FaciPay inválido'
       USING ERRCODE = '22023';
