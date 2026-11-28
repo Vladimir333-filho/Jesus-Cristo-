@@ -88,7 +88,7 @@ BEGIN
 
   IF (p_next_status = 'approved' AND p_next_verification_status <> 'verified')
      OR (p_next_status IN ('rejected', 'suspended') AND p_next_verification_status NOT IN ('unverified', 'rejected'))
-     OR (p_next_status = 'pending' AND p_next_verification_status NOT IN ('pending', 'unverified', 'under_review')) THEN
+     OR (p_next_status = 'pending' AND p_next_verification_status NOT IN ('unverified', 'under_review')) THEN
     RAISE EXCEPTION 'O estado de verificação não corresponde à decisão administrativa'
       USING ERRCODE = '23514';
   END IF;
