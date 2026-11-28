@@ -101,10 +101,12 @@ export async function POST(request: Request): Promise<Response> {
     typeof externalTransactionId !== 'string' ||
     externalTransactionId.length < 1 ||
     externalTransactionId.length > 200 ||
+    externalTransactionId !== externalTransactionId.trim() ||
     !['PEN', 'CON', 'CAN'].includes(String(paymentStatus)) ||
     typeof referenceNumber !== 'string' ||
     referenceNumber.length < 1 ||
     referenceNumber.length > 200 ||
+    referenceNumber !== referenceNumber.trim() ||
     typeof amount !== 'number' ||
     !Number.isSafeInteger(amount) ||
     amount <= 0
