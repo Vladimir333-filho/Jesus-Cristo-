@@ -3,6 +3,15 @@
 
 BEGIN;
 
+-- FaciPay is a distinct checkout method; do not mislabel it as Multicaixa Express.
+ALTER TABLE public.payments
+  DROP CONSTRAINT IF EXISTS payments_method_check,
+  ADD CONSTRAINT payments_method_check
+    CHECK (method = ANY (ARRAY['bank_transfer','multicaixa_express','unitel_money','other','facipay'])) NOT VALID;
+
+ALTER TABLE public.payments
+  VALIDATE CONSTRAINT payments_method_check;
+
 ALTER TABLE public.payments
   ADD COLUMN IF NOT EXISTS provider text,
   ADD COLUMN IF NOT EXISTS external_transaction_id text,
