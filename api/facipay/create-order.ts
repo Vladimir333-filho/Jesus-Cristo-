@@ -53,6 +53,7 @@ function getFaciPayConfiguration() {
   const clientId = env.FACIPAY_CLIENT_ID || '';
   const clientSecret = env.FACIPAY_CLIENT_SECRET || '';
   const configuredApiUrl = env.FACIPAY_API_URL || '';
+  const frontendPublishableKey = env.VITE_FACIPAY_PUBLISHABLE_KEY || '';
 
   const isSandbox = publishableKey.startsWith('pk_test_');
   const isProduction = publishableKey.startsWith('pk_live_');
@@ -65,9 +66,10 @@ function getFaciPayConfiguration() {
   if (
     !expectedApiUrl ||
     configuredApiUrl !== expectedApiUrl ||
+    (frontendPublishableKey && frontendPublishableKey !== publishableKey) ||
     !clientId ||
     !clientSecret ||
-    publishableKey.length <= (isSandbox ? 8 : 8)
+    publishableKey.length <= 8
   ) {
     return null;
   }
@@ -173,11 +175,14 @@ export async function POST(request: Request): Promise<Response> {
 
   if (reservationError || !reservationData || typeof reservationData !== 'object') {
     const message = reservationError?.message || '';
-    if (message.includes('checkout') || message.includes('pendente')) {
-      return json({ error: message }, 409);
+    if (message.includes('pendente') || message.includes('checkout')) {
+      return json({ error: 'Já existe um checkout ou pagamento pendente para esta empresa. Aguarde a confirmação antes de tentar novamente.' }, 409);
     }
     if (message.includes('aprovada') || message.includes('verificada')) {
-      return json({ error: message }, 403);
+      return json({ error: 'A empresa precisa de estar aprovada e verificada para aderir ao Premium.' }, 403);
+    }
+    if (message.includes('reconciliação')) {
+      return json({ error: 'O plano desta empresa precisa de reconciliação administrativa antes de uma nova cobrança.' }, 409);
     }
     return json({ error: 'Não foi possível preparar a subscrição Premium.' }, 400);
   }
