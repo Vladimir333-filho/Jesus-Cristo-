@@ -531,6 +531,13 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
     setFeedback(null);
     try {
       const reason = adminReasons[business.id];
+      if ((nextStatus === 'rejected' || nextStatus === 'suspended') && !reason?.trim()) {
+        setFeedback({
+          type: 'error',
+          text: 'Indique uma justificação antes de rejeitar ou suspender esta empresa.',
+        });
+        return;
+      }
       await adminTransitionBusinessState({
         adminId: user.id,
         isStrictAdmin: permissions.isStrictAdmin,
@@ -1819,7 +1826,7 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
                                 onChange={(e) =>
                                   setAdminReasons((prev) => ({ ...prev, [business.id]: e.target.value }))
                                 }
-                                placeholder="Justificação / nota de auditoria (opcional)..."
+                                placeholder="Justificação obrigatória para rejeitar/suspender; nota opcional para outras decisões..."
                                 className="w-full px-3 py-1.5 rounded-lg border border-gray-300 text-xs focus:outline-none focus:border-[#0F4C5C]"
                               />
                             </div>
