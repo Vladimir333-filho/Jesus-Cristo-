@@ -67,8 +67,16 @@ export function validateSupabaseConfigValues(rawUrlInput: string, rawKeyInput: s
   let parsedHost = '';
   try {
     const u = new URL(rawUrl);
-    if (u.protocol !== 'https:') {
-      throw new Error('URL deve usar HTTPS.');
+    if (
+      u.protocol !== 'https:' ||
+      u.origin !== EXPECTED_SUPABASE_URL ||
+      (u.pathname !== '/' && u.pathname !== '') ||
+      u.search ||
+      u.hash ||
+      u.username ||
+      u.password
+    ) {
+      throw new Error('URL deve corresponder exactamente ao projecto Supabase autorizado e usar HTTPS.');
     }
     parsedHost = u.host;
   } catch {
@@ -290,8 +298,10 @@ function createUnconfiguredClient(reason: string): SupabaseClient {
   const authStub: any = {
     getSession: async () => ({ data: { session: null }, error: null }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-    signInWithPassword: async () => ({ data: { user: null, session: null }, error: { message: reason } }),
-    signUp: async () => ({ data: { user: null, session: null }, error: { message: reason } }),
+    signInWithPassword: async () => ({ data: { user: null, session: null }, error: { message: reason, status: 503 } }),
+    signUp: async () => ({ data: { user: null, session: null }, error: { message: reason, status: 503 } }),
+    resetPasswordForEmail: async () => ({ data: {}, error: { message: reason, status: 503 } }),
+    updateUser: async () => ({ data: { user: null }, error: { message: reason, status: 503 } }),
     signOut: async () => ({ error: null }),
   };
 

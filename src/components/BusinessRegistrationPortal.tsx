@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { FaciPayPremiumCheckout } from './FaciPayPremiumCheckout';
 import {
   Building2,
   CheckCircle2,
@@ -93,6 +94,8 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
   const [auditLogs, setAuditLogs] = useState<AccessAuditLog[]>([]);
 
   const [loading, setLoading] = useState(false);
+  const [loadedContextUserId, setLoadedContextUserId] = useState<string | null>(null);
+  const contextRequestIdRef = useRef(0);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Registration / Edit Form State
@@ -145,12 +148,34 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
     if (user?.id) {
       loadUserContext();
     } else {
+      // Invalidate any in-flight request from the previous authenticated account.
+      contextRequestIdRef.current += 1;
+      setLoadedContextUserId(null);
+      setPermissions({
+        profile: null,
+        assignments: [],
+        isStrictAdmin: false,
+        isModerator: false,
+        isCountryManager: false,
+        assignedCountries: [],
+        canViewVerificationConsole: false,
+        canMutateVerification: false,
+        canAccessAudit: false,
+      });
       setMyBundles([]);
       setNotifications([]);
       setAdminBundles([]);
       setAuditLogs([]);
+      setPreviewDoc(null);
+      setFeedback(null);
+      setLoading(false);
       onUnreadCountChange?.(0);
     }
+
+    return () => {
+      // Also invalidate requests when the account changes or this portal unmounts.
+      contextRequestIdRef.current += 1;
+    };
   }, [user?.id]);
 
   const loadCountries = async () => {
@@ -163,36 +188,73 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
   };
 
   const loadUserContext = async () => {
-    if (!user?.id) return;
+    const userId = user?.id;
+    if (!userId) return;
+
+    const requestId = ++contextRequestIdRef.current;
+    const isCurrentRequest = () => requestId === contextRequestIdRef.current;
+    if (loadedContextUserId !== userId) {
+      // Do not leave the previous account's private business data on screen
+      // while the newly authenticated account is still loading.
+      setLoadedContextUserId(null);
+      setPermissions({
+        profile: null,
+        assignments: [],
+        isStrictAdmin: false,
+        isModerator: false,
+        isCountryManager: false,
+        assignedCountries: [],
+        canViewVerificationConsole: false,
+        canMutateVerification: false,
+        canAccessAudit: false,
+      });
+      setMyBundles([]);
+      setNotifications([]);
+      setAdminBundles([]);
+      setAuditLogs([]);
+      setPreviewDoc(null);
+      setFeedback(null);
+      onUnreadCountChange?.(0);
+    }
     setLoading(true);
     try {
-      const perms = await fetchCurrentUserPermissions(user.id);
+      const perms = await fetchCurrentUserPermissions(userId);
+      if (!isCurrentRequest()) return;
       setPermissions(perms);
 
       const [bundles, notifs] = await Promise.all([
-        fetchMyBusinessBundles(user.id),
-        fetchUserNotifications(user.id).catch(() => [] as NotificationItem[]),
+        fetchMyBusinessBundles(userId),
+        fetchUserNotifications(userId).catch(() => [] as NotificationItem[]),
       ]);
+      if (!isCurrentRequest()) return;
 
       setMyBundles(bundles);
       setNotifications(notifs);
       onUnreadCountChange?.(notifs.filter((n) => !n.read_at).length);
 
       if (perms.canViewVerificationConsole) {
-        const scopedBusinesses = await fetchBusinessesForGovernance(perms).catch(
-          () => [] as OwnerBusinessBundle[]
-        );
+        const scopedBusinesses = await fetchBusinessesForGovernance(perms);
+        if (!isCurrentRequest()) return;
         setAdminBundles(scopedBusinesses);
+      } else {
+        setAdminBundles([]);
       }
 
       if (perms.canAccessAudit) {
-        const logs = await fetchAuditLogs(perms, auditCountryFilter).catch(() => [] as AccessAuditLog[]);
+        const logs = await fetchAuditLogs(perms, auditCountryFilter);
+        if (!isCurrentRequest()) return;
         setAuditLogs(logs);
+      } else {
+        setAuditLogs([]);
       }
+      if (isCurrentRequest()) setLoadedContextUserId(userId);
     } catch (err: any) {
-      setFeedback({ type: 'error', text: err?.message || 'Erro ao carregar dados de registo.' });
+      if (isCurrentRequest()) {
+        setFeedback({ type: 'error', text: err?.message || 'Erro ao carregar dados de registo.' });
+        setLoadedContextUserId(userId);
+      }
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) setLoading(false);
     }
   };
 
@@ -469,6 +531,13 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
     setFeedback(null);
     try {
       const reason = adminReasons[business.id];
+      if ((nextStatus === 'rejected' || nextStatus === 'suspended') && !reason?.trim()) {
+        setFeedback({
+          type: 'error',
+          text: 'Indique uma justificação antes de rejeitar ou suspender esta empresa.',
+        });
+        return;
+      }
       await adminTransitionBusinessState({
         adminId: user.id,
         isStrictAdmin: permissions.isStrictAdmin,
@@ -578,6 +647,17 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
             <ShieldCheck className="w-4 h-4 text-[#D4AF37]" />
             {lang === 'pt' ? 'Entrar ou Criar Conta' : 'Sign In or Create Account'}
           </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (loadedContextUserId !== user.id) {
+    return (
+      <section className="py-16 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8" aria-live="polite">
+        <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center text-sm text-gray-600 shadow-sm">
+          <div className="w-8 h-8 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          {lang === 'pt' ? 'A carregar os dados da conta...' : 'Loading account data...'}
         </div>
       </section>
     );
@@ -1501,6 +1581,15 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
                       </div>
                     )}
                   </div>
+
+                  {isPublished && (
+                    <FaciPayPremiumCheckout
+                      businessId={business.id}
+                      businessName={business.name}
+                      isRenewal={business.plan === 'premium'}
+                      lang={lang}
+                    />
+                  )}
                 </div>
               );
             })
@@ -1628,6 +1717,7 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
                     { id: 'in_review', label: 'Em Análise' },
                     { id: 'approved', label: 'Aprovadas' },
                     { id: 'rejected', label: 'Rejeitadas' },
+                    { id: 'suspended', label: 'Suspensas' },
                   ].map((tab) => (
                     <button
                       key={tab.id}
@@ -1737,7 +1827,7 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
                                 onChange={(e) =>
                                   setAdminReasons((prev) => ({ ...prev, [business.id]: e.target.value }))
                                 }
-                                placeholder="Justificação / nota de auditoria (opcional)..."
+                                placeholder="Justificação obrigatória para rejeitar/suspender; nota opcional para outras decisões..."
                                 className="w-full px-3 py-1.5 rounded-lg border border-gray-300 text-xs focus:outline-none focus:border-[#0F4C5C]"
                               />
                             </div>

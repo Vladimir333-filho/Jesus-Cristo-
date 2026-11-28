@@ -8,6 +8,7 @@ import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { HeroCinematic } from './components/HeroCinematic';
 import { BusinessRegistrationPortal } from './components/BusinessRegistrationPortal';
+import { PaymentsPortal } from './components/PaymentsPortal';
 import { supabase, supabaseConfigStatus } from './lib/supabase';
 import { fetchActiveCountries, syncOwnProfileAfterSignup } from './services/businessRegistration';
 import { Building2, Briefcase, TrendingUp, Calendar, ShieldCheck, Search, CheckCircle, ExternalLink, ArrowRight, Lock, User, Mail, Phone, Globe, Award, Inbox, MapPin, X, AlertTriangle } from 'lucide-react';
@@ -38,7 +39,8 @@ export default function App() {
   const [signupCountryCode, setSignupCountryCode] = useState('AO');
   const [phoneInput, setPhoneInput] = useState('');
   const [activeCountries, setActiveCountries] = useState<Country[]>([]);
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'recovery'>('signin');
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
 
   // Real data state from Supabase (strict allowlist of public fields)
@@ -71,18 +73,41 @@ export default function App() {
   });
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let isActive = true;
+    let authEventVersion = 0;
+
+    // Subscribe before reading the initial session. If an auth event arrives
+    // while getSession() is pending, its newer state must win.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      authEventVersion += 1;
       setUser(session?.user ?? null);
+      if (event === 'PASSWORD_RECOVERY') {
+        setAuthMode('recovery');
+        setIsPasswordRecovery(true);
+        setAuthMessage('');
+        setAuthModalOpen(true);
+      }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (isActive && authEventVersion === 0) {
+          setUser(session?.user ?? null);
+        }
+      })
+      .catch(() => {
+        if (isActive && authEventVersion === 0) {
+          setUser(null);
+        }
+      });
 
     fetchVerifiedBusinesses();
     fetchActiveCountries().then(setActiveCountries).catch(() => setActiveCountries([]));
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isActive = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchVerifiedBusinesses = async () => {
@@ -130,7 +155,47 @@ export default function App() {
     }
 
     try {
-      if (authMode === 'signin') {
+      if (authMode === 'recovery' && isPasswordRecovery) {
+        if (passwordInput.length < 8) {
+          setAuthMessage(lang === 'pt' ? 'A nova palavra-passe deve ter pelo menos 8 caracteres.' : 'The new password must contain at least 8 characters.');
+          return;
+        }
+        const { error: updateError } = await supabase.auth.updateUser({ password: passwordInput });
+        if (updateError) throw updateError;
+
+        // The password is already changed at this point. A sign-out failure must
+        // never be reported as a password-update failure.
+        setPasswordInput('');
+        setIsPasswordRecovery(false);
+        setAuthMode('signin');
+
+        const { error: signOutError } = await supabase.auth.signOut();
+        if (signOutError) {
+          const { error: localSignOutError } = await supabase.auth.signOut({ scope: 'local' });
+          if (localSignOutError) {
+            setAuthMessage(
+              lang === 'pt'
+                ? 'A palavra-passe foi actualizada, mas não foi possível terminar a sessão automaticamente. Termine a sessão manualmente antes de continuar.'
+                : 'Your password was updated, but automatic sign-out failed. Please sign out manually before continuing.'
+            );
+            setAuthModalOpen(true);
+            return;
+          }
+        }
+
+        setAuthMessage(lang === 'pt' ? 'Palavra-passe actualizada com sucesso. Já pode iniciar sessão.' : 'Password updated successfully. You can now sign in.');
+        setAuthModalOpen(true);
+      } else if (authMode === 'recovery') {
+        const { error } = await supabase.auth.resetPasswordForEmail(emailInput.trim(), {
+          redirectTo: `${window.location.origin}/`,
+        });
+        if (error) throw error;
+        setAuthMessage(
+          lang === 'pt'
+            ? 'Se o endereço estiver registado, receberá um email com as instruções para redefinir a palavra-passe.'
+            : 'If the address is registered, you will receive an email with instructions to reset your password.'
+        );
+      } else if (authMode === 'signin') {
         const { error } = await supabase.auth.signInWithPassword({
           email: emailInput.trim(),
           password: passwordInput,
@@ -535,6 +600,14 @@ export default function App() {
           />
         )}
 
+        {currentTab === 'payments' && (
+          <PaymentsPortal
+            user={user}
+            lang={lang}
+            onOpenAuth={() => setAuthModalOpen(true)}
+          />
+        )}
+
         {currentTab === 'opportunities' && (
           <div className="py-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
             <h1 className="text-3xl font-serif font-bold text-[#0A192F] mb-4">Oportunidades Comerciais & Connect Africa</h1>
@@ -646,7 +719,25 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl relative border border-gray-100 my-8">
             <button
-              onClick={() => setAuthModalOpen(false)}
+              onClick={async () => {
+                const abandoningRecovery = isPasswordRecovery;
+                setAuthModalOpen(false);
+                setAuthMode('signin');
+                setIsPasswordRecovery(false);
+                setPasswordInput('');
+                setAuthMessage('');
+                if (abandoningRecovery) {
+                  const { error } = await supabase.auth.signOut({ scope: 'local' });
+                  if (error) {
+                    setAuthMessage(
+                      lang === 'pt'
+                        ? 'Não foi possível encerrar a sessão de recuperação. Volte a fechar a sessão antes de utilizar a conta.'
+                        : 'The recovery session could not be closed. Please sign out before using the account.'
+                    );
+                    setAuthModalOpen(true);
+                  }
+                }
+              }}
               className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 font-bold text-lg"
             >
               ✕
@@ -657,7 +748,9 @@ export default function App() {
               <h3 className="text-2xl font-serif font-bold text-[#0A192F]">
                 {authMode === 'signin'
                   ? lang === 'pt' ? 'Iniciar Sessão' : 'Sign In'
-                  : lang === 'pt' ? 'Registar Nova Conta' : 'Create Account'}
+                  : authMode === 'recovery'
+                    ? lang === 'pt' ? 'Recuperar Palavra-passe' : 'Reset Password'
+                    : lang === 'pt' ? 'Registar Nova Conta' : 'Create Account'}
               </h3>
               <p className="text-xs text-gray-500 mt-1">Angola Connect Africa Business Portal</p>
             </div>
@@ -734,6 +827,7 @@ export default function App() {
                 </>
               )}
 
+              {!isPasswordRecovery && (
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Email Corporativo</label>
                 <div className="relative">
@@ -748,15 +842,17 @@ export default function App() {
                   />
                 </div>
               </div>
+              )}
 
+              {(authMode !== 'recovery' || isPasswordRecovery) && (
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Palavra-passe</label>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">{authMode === 'recovery' ? (lang === 'pt' ? 'Nova palavra-passe' : 'New password') : 'Palavra-passe'}</label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
                   <input
                     type="password"
                     required
-                    minLength={6}
+                    minLength={authMode === 'recovery' ? 8 : 6}
                     value={passwordInput}
                     onChange={(e) => setPasswordInput(e.target.value)}
                     placeholder="••••••••"
@@ -764,6 +860,7 @@ export default function App() {
                   />
                 </div>
               </div>
+              )}
 
               <button
                 type="submit"
@@ -772,23 +869,45 @@ export default function App() {
               >
                 {authMode === 'signin'
                   ? lang === 'pt' ? 'Entrar no Sistema' : 'Sign In'
-                  : lang === 'pt' ? 'Criar Registo' : 'Create Account'}
+                  : authMode === 'recovery'
+                    ? isPasswordRecovery
+                      ? lang === 'pt' ? 'Actualizar palavra-passe' : 'Update password'
+                      : lang === 'pt' ? 'Enviar instruções' : 'Send instructions'
+                    : lang === 'pt' ? 'Criar Registo' : 'Create Account'}
               </button>
             </form>
 
-            <div className="text-center mt-6 pt-4 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMessage('');
-                  setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
-                }}
-                className="text-xs font-semibold text-[#0F4C5C] hover:underline"
-              >
-                {authMode === 'signin'
-                  ? lang === 'pt' ? 'Não tem conta? Registe-se agora' : 'No account? Register now'
-                  : lang === 'pt' ? 'Já tem conta? Iniciar sessão' : 'Already registered? Sign in'}
-              </button>
+            <div className="text-center mt-6 pt-4 border-t border-gray-100 space-y-3">
+              {authMode === 'signin' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMessage('');
+                    setAuthMode('recovery');
+                  }}
+                  className="text-xs font-semibold text-[#0F4C5C] hover:underline"
+                >
+                  {lang === 'pt' ? 'Esqueceu-se da palavra-passe?' : 'Forgot your password?'}
+                </button>
+              )}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMessage('');
+                    setPasswordInput('');
+                    setIsPasswordRecovery(false);
+                    setAuthMode(authMode === 'signup' || authMode === 'recovery' ? 'signin' : 'signup');
+                  }}
+                  className="text-xs font-semibold text-[#0F4C5C] hover:underline"
+                >
+                  {authMode === 'signup'
+                    ? lang === 'pt' ? 'Já tem conta? Iniciar sessão' : 'Already registered? Sign in'
+                    : lang === 'recovery'
+                      ? lang === 'pt' ? 'Voltar ao início de sessão' : 'Back to sign in'
+                      : lang === 'pt' ? 'Não tem conta? Registe-se agora' : 'No account? Register now'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

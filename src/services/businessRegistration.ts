@@ -60,12 +60,12 @@ export const BUSINESS_SECTORS = [
   'Finanças, Banca & Seguros',
 ];
 
+// Values intentionally match the live business_documents.document_type CHECK constraint.
 export const DOCUMENT_TYPES = [
-  { value: 'alvara_comercial', labelPt: 'Alvará / Licença Comercial', labelEn: 'Commercial License' },
-  { value: 'nif_certidao_fiscal', labelPt: 'Cartão de Contribuinte (NIF / Tax ID)', labelEn: 'Tax Registration Certificate (NIF / Tax ID)' },
-  { value: 'certidao_registo_comercial', labelPt: 'Certidão de Registo Comercial / Diário da República', labelEn: 'Commercial Registry Certificate' },
-  { value: 'identificacao_representante', labelPt: 'Identificação do Representante Legal', labelEn: 'Legal Representative ID' },
-  { value: 'procuracao_autorizacao', labelPt: 'Procuração ou Pacto Social', labelEn: 'Power of Attorney / Articles of Association' },
+  { value: 'license', labelPt: 'Alvará / Licença Comercial', labelEn: 'Commercial License' },
+  { value: 'nif', labelPt: 'Cartão de Contribuinte (NIF / Certidão Fiscal)', labelEn: 'Tax Registration Certificate (NIF / Tax ID)' },
+  { value: 'identity', labelPt: 'Identificação do Representante Legal', labelEn: 'Legal Representative ID' },
+  { value: 'other', labelPt: 'Certidão de Registo Comercial, Procuração ou Pacto Social', labelEn: 'Commercial Registry Certificate, Power of Attorney or Articles of Association' },
 ];
 
 export interface UserPermissions {
@@ -184,11 +184,16 @@ export async function fetchCurrentUserPermissions(userId: string): Promise<UserP
       .from('connect_manager_assignments')
       .select('id, user_id, country_code, manager_role, status, assigned_by, assigned_at, updated_at')
       .eq('user_id', userId)
-      .eq('status', 'active'),
+      .eq('status', 'active')
+      .in('manager_role', ['national_admin', 'connect_manager']),
   ]);
 
   const profile = (profileRes.data as Profile) || null;
-  const assignments = (assignRes.data as ConnectManagerAssignment[]) || [];
+  const assignments = ((assignRes.data as ConnectManagerAssignment[]) || []).filter(
+    (assignment) =>
+      assignment.status === 'active' &&
+      ['national_admin', 'connect_manager'].includes(assignment.manager_role)
+  );
   const role = profile?.role;
 
   const isStrictAdmin = role === 'admin';
@@ -239,6 +244,15 @@ export async function fetchMyBusinessBundles(ownerId: string): Promise<OwnerBusi
       .order('created_at', { ascending: false }),
   ]);
 
+  // Do not silently present an incomplete private vault as if no records exist.
+  if (privateRes.error || docsRes.error) {
+    throw new Error(
+      privateRes.error?.message ||
+      docsRes.error?.message ||
+      'Não foi possível carregar os dados privados e documentos da empresa.'
+    );
+  }
+
   const privateMap = new Map<string, BusinessPrivate>();
   ((privateRes.data as BusinessPrivate[]) || []).forEach((p) => privateMap.set(p.business_id, p));
 
@@ -261,14 +275,13 @@ export async function registerBusinessWithPrivate(
   payload: BusinessRegistrationPayload,
   privatePayload: BusinessPrivatePayload
 ): Promise<OwnerBusinessBundle> {
+  // The database derives ownership from auth.uid(); ownerId is retained for API compatibility.
+  void ownerId;
   const cleanWebsite = sanitizePublicUrl(payload.website);
   const slug = buildUniqueSlug(payload.name);
 
-  // Strictly enforces businesses_owner_create RLS policy
-  const { data: insertedBusiness, error: businessError } = await supabase
-    .from('businesses')
-    .insert({
-      owner_id: ownerId,
+  const { data, error } = await supabase.rpc('register_business_with_private', {
+    p_business: {
       name: payload.name.trim(),
       slug,
       country_code: payload.country_code,
@@ -285,40 +298,22 @@ export async function registerBusinessWithPrivate(
       website: cleanWebsite || null,
       services: payload.services,
       languages: payload.languages.length > 0 ? payload.languages : ['pt'],
-      status: 'pending',
-      verification_status: 'unverified',
-      plan: 'free',
-      is_featured: false,
-    })
-    .select(BUSINESS_OWNER_FIELDS)
-    .single();
-
-  if (businessError || !insertedBusiness) {
-    throw new Error(businessError?.message || 'Não foi possível registar a empresa.');
-  }
-
-  const business = insertedBusiness as Business;
-
-  // Save sensitive legal identifiers exclusively in business_private (RLS owner/admin protected)
-  const { data: insertedPrivate, error: privateError } = await supabase
-    .from('business_private')
-    .upsert({
-      business_id: business.id,
+    },
+    p_private: {
       nif: privatePayload.nif.trim() || null,
       license_number: privatePayload.license_number.trim() || null,
       owner_notes: privatePayload.owner_notes?.trim() || null,
-      updated_at: new Date().toISOString(),
-    })
-    .select(BUSINESS_PRIVATE_FIELDS)
-    .single();
+    },
+  });
 
-  if (privateError) {
-    throw new Error(`Empresa criada, mas erro ao guardar dados legais privados: ${privateError.message}`);
+  if (error || !data) {
+    throw new Error(error?.message || 'Não foi possível registar a empresa e os dados legais.');
   }
 
+  const result = data as unknown as { business: Business; privateData: BusinessPrivate };
   return {
-    business,
-    privateData: (insertedPrivate as BusinessPrivate) || null,
+    business: result.business,
+    privateData: result.privateData || null,
     documents: [],
   };
 }
@@ -329,12 +324,13 @@ export async function updatePendingBusinessWithPrivate(
   payload: BusinessRegistrationPayload,
   privatePayload: BusinessPrivatePayload
 ): Promise<OwnerBusinessBundle> {
+  // The database verifies auth.uid(), ownership and the editable business state.
+  void ownerId;
   const cleanWebsite = sanitizePublicUrl(payload.website);
 
-  // Strictly satisfies businesses_owner_update RLS policy for pending/rejected resubmissions
-  const { data: updatedBusiness, error: businessError } = await supabase
-    .from('businesses')
-    .update({
+  const { data, error } = await supabase.rpc('update_pending_business_with_private', {
+    p_business_id: businessId,
+    p_business: {
       name: payload.name.trim(),
       country_code: payload.country_code,
       province: payload.province.trim(),
@@ -350,48 +346,32 @@ export async function updatePendingBusinessWithPrivate(
       website: cleanWebsite || null,
       services: payload.services,
       languages: payload.languages.length > 0 ? payload.languages : ['pt'],
-      status: 'pending',
-      verification_status: 'unverified',
-      plan: 'free',
-      is_featured: false,
-    })
-    .eq('id', businessId)
-    .eq('owner_id', ownerId)
-    .select(BUSINESS_OWNER_FIELDS)
-    .single();
-
-  if (businessError || !updatedBusiness) {
-    throw new Error(
-      businessError?.message ||
-        'Apenas empresas pendentes ou rejeitadas (não verificadas) podem ser editadas e resubmetidas pelo proprietário.'
-    );
-  }
-
-  const { data: updatedPrivate, error: privateError } = await supabase
-    .from('business_private')
-    .upsert({
-      business_id: businessId,
+    },
+    p_private: {
       nif: privatePayload.nif.trim() || null,
       license_number: privatePayload.license_number.trim() || null,
       owner_notes: privatePayload.owner_notes?.trim() || null,
-      updated_at: new Date().toISOString(),
-    })
-    .select(BUSINESS_PRIVATE_FIELDS)
-    .single();
+    },
+  });
 
-  if (privateError) {
-    throw new Error(privateError.message);
+  if (error || !data) {
+    throw new Error(error?.message || 'Não foi possível actualizar a empresa e os dados legais.');
   }
 
-  const { data: docs } = await supabase
+  const result = data as unknown as { business: Business; privateData: BusinessPrivate };
+  const { data: docs, error: docsError } = await supabase
     .from('business_documents')
     .select(BUSINESS_DOCUMENT_FIELDS)
     .eq('business_id', businessId)
     .order('created_at', { ascending: false });
 
+  if (docsError) {
+    throw new Error(`Empresa actualizada, mas não foi possível carregar os documentos: ${docsError.message}`);
+  }
+
   return {
-    business: updatedBusiness as Business,
-    privateData: (updatedPrivate as BusinessPrivate) || null,
+    business: result.business,
+    privateData: result.privateData || null,
     documents: (docs as BusinessDocument[]) || [],
   };
 }
@@ -409,7 +389,13 @@ export async function uploadBusinessPhoto(
     throw new Error('A imagem excede o limite máximo de 5 MB.');
   }
 
-  const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+  // Derive the stored extension from the accepted MIME type, not the user-supplied filename.
+  const photoExtension: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+  };
+  const ext = photoExtension[file.type];
   const filePath = `${businessId}/${kind}_${Date.now()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
@@ -423,23 +409,9 @@ export async function uploadBusinessPhoto(
   const { data: publicUrlData } = supabase.storage.from('business-photos').getPublicUrl(filePath);
   const publicUrl = publicUrlData.publicUrl;
 
-  // Preserve/reset pending+unverified state so owner updates on rejected/pending businesses satisfy businesses_owner_update
-  const updatePatch =
-    kind === 'logo'
-      ? {
-          logo_url: publicUrl,
-          status: 'pending' as BusinessStatus,
-          verification_status: 'unverified' as BusinessVerificationStatus,
-          plan: 'free' as const,
-          is_featured: false,
-        }
-      : {
-          cover_url: publicUrl,
-          status: 'pending' as BusinessStatus,
-          verification_status: 'unverified' as BusinessVerificationStatus,
-          plan: 'free' as const,
-          is_featured: false,
-        };
+  // Owners may update the image URL only. Administrative fields
+  // (status, verification, plan and featuring) remain database-controlled.
+  const updatePatch = kind === 'logo' ? { logo_url: publicUrl } : { cover_url: publicUrl };
 
   const { error: updateErr } = await supabase
     .from('businesses')
@@ -447,7 +419,18 @@ export async function uploadBusinessPhoto(
     .eq('id', businessId);
 
   if (updateErr) {
-    throw new Error(`Imagem carregada, mas erro ao associar à empresa: ${updateErr.message}`);
+    // Compensate for a failed database association to avoid leaving an
+    // unreferenced public object behind.
+    const { error: cleanupError } = await supabase.storage
+      .from('business-photos')
+      .remove([filePath]);
+
+    if (cleanupError) {
+      throw new Error(
+        `Imagem carregada, mas não associada à empresa (${updateErr.message}) e a limpeza falhou (${cleanupError.message}). Ficheiro para revisão: ${filePath}`
+      );
+    }
+    throw new Error(`Não foi possível associar a imagem à empresa (${updateErr.message}). O ficheiro temporário foi removido.`);
   }
 
   return publicUrl;
@@ -458,6 +441,14 @@ export async function submitPrivateDocument(
   documentType: string,
   file: File
 ): Promise<BusinessDocument> {
+  const allowedDocumentTypes = DOCUMENT_TYPES.map((item) => item.value);
+  if (!allowedDocumentTypes.includes(documentType)) {
+    throw new Error('Tipo de documento inválido.');
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(businessId)) {
+    throw new Error('Identificador de empresa inválido.');
+  }
+
   const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
   if (!allowedTypes.includes(file.type)) {
     throw new Error('Formato não permitido. Envie PDF, JPG ou PNG para documentos legais.');
@@ -466,8 +457,15 @@ export async function submitPrivateDocument(
     throw new Error('O documento excede o limite máximo de 10 MB.');
   }
 
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const storagePath = `${businessId}/${Date.now()}_${safeName}`;
+  // Keep a sanitized display stem, but enforce the extension from the accepted MIME type.
+  const documentExtension: Record<string, string> = {
+    'application/pdf': 'pdf',
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+  };
+  const originalName = file.name.replace(/\.[^.]*$/, '');
+  const safeName = originalName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100) || 'documento';
+  const storagePath = `${businessId}/${Date.now()}_${safeName}.${documentExtension[file.type]}`;
 
   const { error: uploadError } = await supabase.storage
     .from('business-documents')
@@ -492,7 +490,19 @@ export async function submitPrivateDocument(
     .single();
 
   if (insertError || !docRecord) {
-    throw new Error(insertError?.message || 'Erro ao registar metadados do documento.');
+    // The Storage upload and metadata insert are separate requests. If the
+    // database write fails, compensate by removing the just-uploaded object.
+    const { error: cleanupError } = await supabase.storage
+      .from('business-documents')
+      .remove([storagePath]);
+
+    const detail = insertError?.message || 'Erro ao registar metadados do documento.';
+    if (cleanupError) {
+      throw new Error(
+        `Não foi possível registar o documento (${detail}) nem remover o ficheiro órfão (${cleanupError.message}). Caminho para revisão administrativa: ${storagePath}`
+      );
+    }
+    throw new Error(`${detail} O ficheiro temporário foi removido do armazenamento.`);
   }
 
   return docRecord as BusinessDocument;
@@ -587,6 +597,15 @@ export async function fetchBusinessesForGovernance(
 
   const [privateRes, docsRes] = await Promise.all([privatePromise, docsPromise]);
 
+  // Fail visibly when a privileged data query is denied or unavailable.
+  if (privateRes.error || docsRes.error) {
+    throw new Error(
+      privateRes.error?.message ||
+      docsRes.error?.message ||
+      'Não foi possível carregar os dados de governação e documentos.'
+    );
+  }
+
   const privateMap = new Map<string, BusinessPrivate>();
   ((privateRes.data as BusinessPrivate[]) || []).forEach((p) => privateMap.set(p.business_id, p));
 
@@ -604,34 +623,12 @@ export async function fetchBusinessesForGovernance(
   }));
 }
 
-export async function recordAccessAuditEvent(params: {
-  actorId: string;
-  action: string;
-  resource: string;
-  resourceId: string;
-  countryCode: string;
-  metadata?: Record<string, unknown>;
-}): Promise<void> {
-  const { error } = await supabase.from('access_audit').insert({
-    actor_id: params.actorId,
-    action: params.action,
-    resource: params.resource,
-    resource_id: params.resourceId,
-    country_code: params.countryCode,
-    metadata: params.metadata || {},
-  });
-
-  if (error) {
-    throw new Error(`Falha ao gravar registo obrigatório em access_audit: ${error.message}`);
-  }
-}
-
 export async function adminReviewDocument(
   adminId: string,
   isStrictAdmin: boolean,
   doc: BusinessDocument,
   nextStatus: DocumentStatus,
-  countryCode: string
+  _countryCode: string
 ): Promise<BusinessDocument> {
   if (!isStrictAdmin) {
     throw new Error('Operação bloqueada: apenas role = admin pode validar documentos e registar auditoria.');
@@ -652,20 +649,6 @@ export async function adminReviewDocument(
     throw new Error(error?.message || 'Erro ao actualizar o estado do documento.');
   }
 
-  await recordAccessAuditEvent({
-    actorId: adminId,
-    action: `document_${nextStatus}`,
-    resource: 'business_documents',
-    resourceId: doc.id,
-    countryCode,
-    metadata: {
-      business_id: doc.business_id,
-      document_type: doc.document_type,
-      previous_status: doc.status,
-      next_status: nextStatus,
-    },
-  });
-
   return data as BusinessDocument;
 }
 
@@ -677,49 +660,24 @@ export async function adminTransitionBusinessState(params: {
   nextVerificationStatus: BusinessVerificationStatus;
   reason?: string;
 }): Promise<Business> {
-  const { adminId, isStrictAdmin, business, nextStatus, nextVerificationStatus, reason } = params;
+  const { isStrictAdmin, business, nextStatus, nextVerificationStatus, reason } = params;
 
   if (!isStrictAdmin) {
     throw new Error(
-      'Operação bloqueada: aprovação, rejeição e suspensão estão limitadas a role = admin até existir auditoria server-side para moderadores.'
+      'Operação bloqueada: aprovação, rejeição e suspensão estão limitadas ao Administrador Global.'
     );
   }
 
-  const isPublishing = nextStatus === 'approved' && nextVerificationStatus === 'verified';
-  const updatePayload: Record<string, unknown> = {
-    status: nextStatus,
-    verification_status: nextVerificationStatus,
-    approved_at: isPublishing ? business.approved_at || new Date().toISOString() : business.approved_at,
-  };
-
-  const { data, error } = await supabase
-    .from('businesses')
-    .update(updatePayload)
-    .eq('id', business.id)
-    .select(BUSINESS_OWNER_FIELDS)
-    .single();
+  const { data, error } = await supabase.rpc('admin_transition_business_state', {
+    p_business_id: business.id,
+    p_next_status: nextStatus,
+    p_next_verification_status: nextVerificationStatus,
+    p_reason: reason?.trim() || null,
+  });
 
   if (error || !data) {
     throw new Error(error?.message || 'Erro ao actualizar estado de verificação da empresa.');
   }
-
-  await recordAccessAuditEvent({
-    actorId: adminId,
-    action: isPublishing
-      ? 'business_approved_and_verified'
-      : `business_state_${nextStatus}_${nextVerificationStatus}`,
-    resource: 'businesses',
-    resourceId: business.id,
-    countryCode: business.country_code,
-    metadata: {
-      business_name: business.name,
-      previous_status: business.status,
-      next_status: nextStatus,
-      previous_verification: business.verification_status,
-      next_verification: nextVerificationStatus,
-      reason: reason || null,
-    },
-  });
 
   return data as Business;
 }

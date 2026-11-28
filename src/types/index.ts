@@ -130,9 +130,9 @@ export interface BusinessCatalogItem {
   description: string;
   category?: string;
   price_aoa?: number;
-  price_mode: 'fixed' | 'negotiable' | 'on_request';
+  price_mode: 'fixed' | 'from' | 'quote';
   stock_quantity?: number;
-  availability: 'available' | 'low_stock' | 'unavailable';
+  availability: 'available' | 'unavailable' | 'on_request';
   image_url?: string;
   is_featured: boolean;
   display_order: number;
@@ -151,8 +151,8 @@ export interface BusinessOpportunity {
   budget_max?: number;
   currency: string;
   deadline?: string;
-  visibility: 'public' | 'connections_only';
-  status: 'draft' | 'published' | 'closed';
+  visibility: 'public' | 'connections';
+  status: 'draft' | 'published' | 'closed' | 'archived';
   created_at: string;
 }
 
