@@ -1717,6 +1717,7 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
                     { id: 'in_review', label: 'Em Análise' },
                     { id: 'approved', label: 'Aprovadas' },
                     { id: 'rejected', label: 'Rejeitadas' },
+                    { id: 'suspended', label: 'Suspensas' },
                   ].map((tab) => (
                     <button
                       key={tab.id}
