@@ -78,6 +78,8 @@ BEGIN
   END IF;
 
   IF p_business_id IS NULL
+     OR p_next_status IS NULL
+     OR p_next_verification_status IS NULL
      OR p_next_status NOT IN ('pending', 'approved', 'rejected', 'suspended')
      OR p_next_verification_status NOT IN ('unverified', 'under_review', 'verified', 'rejected') THEN
     RAISE EXCEPTION 'Transição de estado inválida'
