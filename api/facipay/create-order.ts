@@ -275,9 +275,13 @@ export async function POST(request: Request): Promise<Response> {
       periodEnd: reservation.period_end,
     });
   } catch {
-    await admin.rpc('fail_facipay_premium_checkout', {
-      p_reservation_id: reservation.reservation_id,
-    }).catch(() => undefined);
+    try {
+      await admin.rpc('fail_facipay_premium_checkout', {
+        p_reservation_id: reservation.reservation_id,
+      });
+    } catch {
+      // A failed cleanup must not expose provider details or replace the original response.
+    }
 
     // Never log provider credentials, bearer tokens, references, or request bodies.
     console.error('FaciPay Premium order creation failed');
