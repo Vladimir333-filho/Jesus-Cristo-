@@ -75,12 +75,33 @@ export const FaciPayPremiumCheckout: React.FC<FaciPayPremiumCheckoutProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
+  const [subscriptionExists, setSubscriptionExists] = useState<boolean | null>(null);
   const publishableKey = import.meta.env?.VITE_FACIPAY_PUBLISHABLE_KEY || '';
+  const renewal = subscriptionExists ?? isRenewal;
+
+  useEffect(() => {
+    let active = true;
+    setSubscriptionExists(null);
+    if (!publishableKey) return;
+
+    void supabase
+      .from('business_subscriptions')
+      .select('id')
+      .eq('business_id', businessId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (active && !error) setSubscriptionExists(Boolean(data));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [businessId, publishableKey]);
 
   const copy = lang === 'pt'
     ? {
-        title: isRenewal ? 'Renovar Plano Premium' : 'Activar Plano Premium',
-        price: isRenewal ? '3.000 Kz / trimestre' : '10.000 Kz / adesão inicial',
+        title: renewal ? 'Renovar Plano Premium' : 'Activar Plano Premium',
+        price: renewal ? '3.000 Kz / trimestre' : '10.000 Kz / adesão inicial',
         pending: 'O checkout foi iniciado. A activação só acontece depois da confirmação do webhook FaciPay.',
         cancelled: 'O checkout foi fechado. O estado do pagamento será confirmado pelo servidor.',
         failed: 'Não foi possível iniciar o pagamento. Verifique a ligação e tente novamente.',
@@ -88,8 +109,8 @@ export const FaciPayPremiumCheckout: React.FC<FaciPayPremiumCheckoutProps> = ({
         secure: 'Pagamento protegido. Não introduza dados bancários nesta página.',
       }
     : {
-        title: isRenewal ? 'Renew Premium Plan' : 'Activate Premium Plan',
-        price: isRenewal ? '3,000 AOA / quarter' : '10,000 AOA / initial activation',
+        title: renewal ? 'Renew Premium Plan' : 'Activate Premium Plan',
+        price: renewal ? '3,000 AOA / quarter' : '10,000 AOA / initial activation',
         pending: 'Checkout started. The plan is activated only after the FaciPay webhook confirms payment.',
         cancelled: 'Checkout was closed. The payment state will be confirmed by the server.',
         failed: 'Payment could not be started. Check your connection and try again.',
