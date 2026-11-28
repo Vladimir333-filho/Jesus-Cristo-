@@ -903,7 +903,7 @@ export default function App() {
                 >
                   {authMode === 'signup'
                     ? lang === 'pt' ? 'Já tem conta? Iniciar sessão' : 'Already registered? Sign in'
-                    : lang === 'recovery'
+                    : authMode === 'recovery'
                       ? lang === 'pt' ? 'Voltar ao início de sessão' : 'Back to sign in'
                       : lang === 'pt' ? 'Não tem conta? Registe-se agora' : 'No account? Register now'}
                 </button>
