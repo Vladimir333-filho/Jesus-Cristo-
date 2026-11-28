@@ -63,7 +63,7 @@ CREATE INDEX IF NOT EXISTS payment_audit_payment_created_idx
   ON public.payment_audit (payment_id, created_at DESC);
 
 ALTER TABLE public.payment_audit ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.payment_audit FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.payment_audit FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT ON TABLE public.payment_audit TO authenticated;
 DROP POLICY IF EXISTS payment_audit_admin_read ON public.payment_audit;
 CREATE POLICY payment_audit_admin_read
@@ -72,6 +72,32 @@ CREATE POLICY payment_audit_admin_read
   TO authenticated
   USING (public.is_platform_admin_only());
 
+-- The audit ledger is append-only, including for the service role. Its only
+-- writer is the SECURITY DEFINER lifecycle trigger owned by the database.
+CREATE OR REPLACE FUNCTION public.reject_payment_audit_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path TO ''
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'O histórico de pagamentos é imutável'
+    USING ERRCODE = '42501';
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.reject_payment_audit_mutation()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+DROP TRIGGER IF EXISTS payment_audit_no_row_mutation ON public.payment_audit;
+CREATE TRIGGER payment_audit_no_row_mutation
+  BEFORE UPDATE OR DELETE ON public.payment_audit
+  FOR EACH ROW EXECUTE FUNCTION public.reject_payment_audit_mutation();
+
+DROP TRIGGER IF EXISTS payment_audit_no_truncate ON public.payment_audit;
+CREATE TRIGGER payment_audit_no_truncate
+  BEFORE TRUNCATE ON public.payment_audit
+  FOR EACH STATEMENT EXECUTE FUNCTION public.reject_payment_audit_mutation();
+
 CREATE OR REPLACE FUNCTION public.guard_payment_integrity()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -79,7 +105,7 @@ SECURITY DEFINER
 SET search_path TO ''
 AS $function$
 DECLARE
-  v_is_service boolean := COALESCE(auth.role(), '') IN ('service_role', 'supabase_admin');
+  v_is_service boolean := COALESCE(current_setting('request.jwt.claim.role', true), '') IN ('service_role', 'supabase_admin');
   v_is_admin boolean := public.is_platform_admin_only();
 BEGIN
   IF TG_OP = 'INSERT' THEN
