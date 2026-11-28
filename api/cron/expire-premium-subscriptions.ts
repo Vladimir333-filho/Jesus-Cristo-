@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
+import { Buffer } from 'node:buffer';
 import { env } from 'node:process';
 import { createClient } from '@supabase/supabase-js';
 
