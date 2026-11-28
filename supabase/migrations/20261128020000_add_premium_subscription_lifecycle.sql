@@ -137,6 +137,12 @@ BEGIN
      AND status = 'creating'
      AND created_at < now() - interval '2 minutes';
 
+  UPDATE public.facipay_checkout_reservations
+     SET status = 'expired', updated_at = now()
+   WHERE business_id = p_business_id
+     AND status = 'ready'
+     AND expires_at <= now();
+
   SELECT * INTO v_existing
     FROM public.facipay_checkout_reservations
    WHERE business_id = p_business_id
@@ -331,11 +337,9 @@ SECURITY DEFINER
 SET search_path TO ''
 AS $function$
 DECLARE
+  v_reservation public.facipay_checkout_reservations%ROWTYPE;
   v_subscription public.business_subscriptions%ROWTYPE;
-  v_today date := (now() AT TIME ZONE 'Africa/Luanda')::date;
-  v_expected_amount integer;
-  v_expected_start date;
-  v_expected_end date;
+  v_has_subscription boolean;
 BEGIN
   IF TG_OP <> 'UPDATE'
      OR OLD.status <> 'pending'
@@ -345,11 +349,22 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  SELECT * INTO v_reservation
+    FROM public.facipay_checkout_reservations
+   WHERE external_transaction_id = NEW.external_transaction_id
+   FOR UPDATE;
+
+  IF NOT FOUND
+     OR v_reservation.payment_id IS DISTINCT FROM NEW.id
+     OR v_reservation.status NOT IN ('ready', 'expired') THEN
+    RAISE EXCEPTION 'Reserva de checkout FaciPay não corresponde ao pagamento'
+      USING ERRCODE = '23514';
+  END IF;
+
   IF NEW.status = 'rejected' AND NEW.provider_status = 'CAN' THEN
     UPDATE public.facipay_checkout_reservations
        SET status = 'cancelled', updated_at = now()
-     WHERE external_transaction_id = NEW.external_transaction_id
-       AND status = 'ready';
+     WHERE id = v_reservation.id;
     RETURN NEW;
   END IF;
 
@@ -357,37 +372,28 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Serialize successful renewals for one business and calculate the entitlement
-  -- from the authoritative subscription row, never from the browser.
+  IF NEW.amount_aoa <> v_reservation.amount_aoa
+     OR NEW.period_start IS DISTINCT FROM v_reservation.period_start
+     OR NEW.period_end IS DISTINCT FROM v_reservation.period_end THEN
+    RAISE EXCEPTION 'Pagamento Premium não corresponde ao preço ou período reservado'
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- Serialize successful activations/renewals for this company.
   PERFORM 1 FROM public.businesses WHERE id = NEW.business_id FOR UPDATE;
 
   SELECT * INTO v_subscription
     FROM public.business_subscriptions
    WHERE business_id = NEW.business_id
    FOR UPDATE;
+  v_has_subscription := FOUND;
 
-  IF NOT FOUND THEN
-    v_expected_amount := 10000;
-    v_expected_start := v_today;
-  ELSE
-    v_expected_amount := 3000;
-    v_expected_start := CASE
-      WHEN v_subscription.current_period_end >= v_today
-        THEN v_subscription.current_period_end + 1
-      ELSE v_today
-    END;
-  END IF;
+  IF v_reservation.is_initial THEN
+    IF v_has_subscription OR v_reservation.amount_aoa <> 10000 THEN
+      RAISE EXCEPTION 'A adesão inicial Premium já existe ou tem valor inválido'
+        USING ERRCODE = '23514';
+    END IF;
 
-  v_expected_end := (v_expected_start + interval '3 months' - interval '1 day')::date;
-
-  IF NEW.amount_aoa <> v_expected_amount
-     OR NEW.period_start IS DISTINCT FROM v_expected_start
-     OR NEW.period_end IS DISTINCT FROM v_expected_end THEN
-    RAISE EXCEPTION 'Pagamento Premium não corresponde ao preço ou período contratual esperado'
-      USING ERRCODE = '23514';
-  END IF;
-
-  IF NOT FOUND THEN
     INSERT INTO public.business_subscriptions (
       business_id, status, started_at, current_period_start, current_period_end,
       first_payment_id, last_payment_id
@@ -395,6 +401,11 @@ BEGIN
       NEW.business_id, 'active', now(), NEW.period_start, NEW.period_end, NEW.id, NEW.id
     );
   ELSE
+    IF NOT v_has_subscription OR v_reservation.amount_aoa <> 3000 THEN
+      RAISE EXCEPTION 'A renovação Premium exige uma subscrição existente e o valor correcto'
+        USING ERRCODE = '23514';
+    END IF;
+
     UPDATE public.business_subscriptions
        SET status = 'active',
            current_period_start = NEW.period_start,
@@ -411,8 +422,7 @@ BEGIN
 
   UPDATE public.facipay_checkout_reservations
      SET status = 'consumed', updated_at = now()
-   WHERE external_transaction_id = NEW.external_transaction_id
-     AND status = 'ready';
+   WHERE id = v_reservation.id;
 
   RETURN NEW;
 END;
