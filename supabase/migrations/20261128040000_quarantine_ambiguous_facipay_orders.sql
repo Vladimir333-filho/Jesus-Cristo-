@@ -189,7 +189,7 @@ BEGIN
          reference_number = COALESCE(p_reference_number, reference_number),
          updated_at = now()
    WHERE id = p_reservation_id
-     AND status IN ('creating', 'ready');
+     AND status = 'creating';
 END;
 $function$;
 
