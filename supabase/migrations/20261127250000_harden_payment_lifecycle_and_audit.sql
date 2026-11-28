@@ -16,6 +16,7 @@ ALTER TABLE public.payments
   ADD COLUMN IF NOT EXISTS provider text,
   ADD COLUMN IF NOT EXISTS external_transaction_id text,
   ADD COLUMN IF NOT EXISTS provider_status text,
+  ADD COLUMN IF NOT EXISTS provider_reference text,
   ADD COLUMN IF NOT EXISTS review_reason text,
   ADD COLUMN IF NOT EXISTS refunded_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS refunded_at timestamptz;
@@ -29,6 +30,8 @@ ALTER TABLE public.payments
     CHECK (provider IS NULL OR provider IN ('facipay')) NOT VALID,
   ADD CONSTRAINT payments_provider_status_check
     CHECK (provider_status IS NULL OR provider_status IN ('PEN', 'CON', 'CAN')) NOT VALID,
+  ADD CONSTRAINT payments_provider_reference_length_check
+    CHECK (provider_reference IS NULL OR char_length(btrim(provider_reference)) BETWEEN 1 AND 200) NOT VALID,
   ADD CONSTRAINT payments_external_transaction_pair_check
     CHECK ((provider IS NULL AND external_transaction_id IS NULL)
         OR (provider IS NOT NULL AND external_transaction_id IS NOT NULL)) NOT VALID,
@@ -44,6 +47,7 @@ ALTER TABLE public.payments
   VALIDATE CONSTRAINT payments_amount_integer_check,
   VALIDATE CONSTRAINT payments_provider_check,
   VALIDATE CONSTRAINT payments_provider_status_check,
+  VALIDATE CONSTRAINT payments_provider_reference_length_check,
   VALIDATE CONSTRAINT payments_external_transaction_pair_check,
   VALIDATE CONSTRAINT payments_external_transaction_id_length_check,
   VALIDATE CONSTRAINT payments_provider_status_requires_provider_check,
@@ -135,7 +139,8 @@ BEGIN
     IF NOT v_is_service
        AND (NEW.provider IS NOT NULL
          OR NEW.external_transaction_id IS NOT NULL
-         OR NEW.provider_status IS NOT NULL) THEN
+         OR NEW.provider_status IS NOT NULL
+         OR NEW.provider_reference IS NOT NULL) THEN
       RAISE EXCEPTION 'Os dados de integração do fornecedor são reservados ao servidor'
         USING ERRCODE = '42501';
     END IF;
@@ -151,6 +156,7 @@ BEGIN
      OR NEW.amount_aoa IS DISTINCT FROM OLD.amount_aoa
      OR NEW.method IS DISTINCT FROM OLD.method
      OR NEW.reference IS DISTINCT FROM OLD.reference
+     OR NEW.provider_reference IS DISTINCT FROM OLD.provider_reference
      OR NEW.proof_path IS DISTINCT FROM OLD.proof_path
      OR NEW.period_start IS DISTINCT FROM OLD.period_start
      OR NEW.period_end IS DISTINCT FROM OLD.period_end
@@ -398,7 +404,7 @@ BEGIN
   END IF;
 
   IF v_payment.amount_aoa <> p_amount
-     OR v_payment.reference IS DISTINCT FROM p_reference_number THEN
+     OR v_payment.provider_reference IS DISTINCT FROM p_reference_number THEN
     RETURN jsonb_build_object('received', true, 'processed', false, 'reason', 'payment_mismatch');
   END IF;
 
