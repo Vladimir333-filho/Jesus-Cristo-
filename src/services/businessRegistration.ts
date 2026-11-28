@@ -660,27 +660,20 @@ export async function adminTransitionBusinessState(params: {
   nextVerificationStatus: BusinessVerificationStatus;
   reason?: string;
 }): Promise<Business> {
-  const { isStrictAdmin, business, nextStatus, nextVerificationStatus } = params;
+  const { isStrictAdmin, business, nextStatus, nextVerificationStatus, reason } = params;
 
   if (!isStrictAdmin) {
     throw new Error(
-      'Operação bloqueada: aprovação, rejeição e suspensão estão limitadas a role = admin até existir auditoria server-side para moderadores.'
+      'Operação bloqueada: aprovação, rejeição e suspensão estão limitadas ao Administrador Global.'
     );
   }
 
-  const isPublishing = nextStatus === 'approved' && nextVerificationStatus === 'verified';
-  const updatePayload: Record<string, unknown> = {
-    status: nextStatus,
-    verification_status: nextVerificationStatus,
-    approved_at: isPublishing ? business.approved_at || new Date().toISOString() : business.approved_at,
-  };
-
-  const { data, error } = await supabase
-    .from('businesses')
-    .update(updatePayload)
-    .eq('id', business.id)
-    .select(BUSINESS_OWNER_FIELDS)
-    .single();
+  const { data, error } = await supabase.rpc('admin_transition_business_state', {
+    p_business_id: business.id,
+    p_next_status: nextStatus,
+    p_next_verification_status: nextVerificationStatus,
+    p_reason: reason?.trim() || null,
+  });
 
   if (error || !data) {
     throw new Error(error?.message || 'Erro ao actualizar estado de verificação da empresa.');
