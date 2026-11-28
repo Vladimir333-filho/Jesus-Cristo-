@@ -23,7 +23,10 @@ WITH CHECK (
     SELECT 1
     FROM public.businesses b
     WHERE b.id::text = (storage.foldername(objects.name))[1]
-      AND b.owner_id = (SELECT auth.uid())
+      AND (
+        b.owner_id = (SELECT auth.uid())
+        OR public.is_platform_admin_only()
+      )
       AND objects.name ~ (
         '^' || b.id::text ||
         '/[A-Za-z0-9_.-]{1,180}[.](pdf|jpg|png)$'
