@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { FaciPayPremiumCheckout } from './FaciPayPremiumCheckout';
 import {
   Building2,
   CheckCircle2,
@@ -1573,6 +1574,15 @@ export const BusinessRegistrationPortal: React.FC<BusinessRegistrationPortalProp
                       </div>
                     )}
                   </div>
+
+                  {isPublished && (
+                    <FaciPayPremiumCheckout
+                      businessId={business.id}
+                      businessName={business.name}
+                      isRenewal={business.plan === 'premium'}
+                      lang={lang}
+                    />
+                  )}
                 </div>
               );
             })
