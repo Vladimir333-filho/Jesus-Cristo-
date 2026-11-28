@@ -210,8 +210,11 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: 'A reserva de pagamento devolveu dados inválidos.' }, 502);
   }
 
+  let providerOrderAttempted = false;
+  let providerReferenceNumber = '';
   try {
     const accessToken = await getFaciPayAccessToken(config);
+    providerOrderAttempted = true;
     const providerResponse = await fetch(
       `${config.apiUrl}/facipaypartner/createPaymentOrder`,
       {
@@ -247,6 +250,7 @@ export async function POST(request: Request): Promise<Response> {
     ) {
       throw new Error('FACIPAY_ORDER_FAILED');
     }
+    providerReferenceNumber = referenceNumber;
 
     const { data: finalized, error: finalizeError } = await admin.rpc(
       'finalize_facipay_premium_checkout',
@@ -276,11 +280,18 @@ export async function POST(request: Request): Promise<Response> {
     });
   } catch {
     try {
-      await admin.rpc('fail_facipay_premium_checkout', {
-        p_reservation_id: reservation.reservation_id,
-      });
+      if (providerOrderAttempted) {
+        await admin.rpc('mark_facipay_premium_checkout_reconciliation', {
+          p_reservation_id: reservation.reservation_id,
+          p_reference_number: providerReferenceNumber || null,
+        });
+      } else {
+        await admin.rpc('fail_facipay_premium_checkout', {
+          p_reservation_id: reservation.reservation_id,
+        });
+      }
     } catch {
-      // A failed cleanup must not expose provider details or replace the original response.
+      // Keep the reservation locked if cleanup fails; do not risk a duplicate charge.
     }
 
     // Never log provider credentials, bearer tokens, references, or request bodies.
