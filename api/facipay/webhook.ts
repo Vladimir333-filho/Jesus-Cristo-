@@ -147,16 +147,13 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (result.processed !== true && result.reason === 'unknown_transaction') {
-    // The checkout record may not yet be committed when the provider sends
-    // its callback. Ask the provider to retry instead of permanently
-    // acknowledging an event that could not be associated with a payment.
+    // The provider contract expects prompt acknowledgement. Do not invent
+    // retry semantics for unknown IDs; log safely for operator investigation.
     console.warn('FaciPay webhook received an event for an unknown transaction');
-    return json({ error: 'Payment transaction is not available yet' }, 503);
   }
 
   if (result.processed !== true && result.reason === 'payment_mismatch') {
-    // A mismatch is acknowledged to avoid an endless retry, but never updates
-    // the financial record. Investigate it through the provider dashboard.
+    // A mismatch is acknowledged, but never updates the financial record.
     console.error('FaciPay webhook rejected a payment mismatch');
   }
 
