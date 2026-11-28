@@ -163,6 +163,10 @@ BEGIN
         NEW.refunded_by := OLD.refunded_by;
         NEW.refunded_at := OLD.refunded_at;
       ELSIF v_is_admin THEN
+        IF OLD.provider IS NOT NULL THEN
+          RAISE EXCEPTION 'Pagamentos FaciPay só podem ser confirmados após evento CON validado pelo webhook'
+            USING ERRCODE = '42501';
+        END IF;
         NEW.confirmed_by := auth.uid();
         NEW.confirmed_at := now();
         NEW.refunded_by := OLD.refunded_by;
@@ -185,6 +189,10 @@ BEGIN
         NEW.refunded_by := OLD.refunded_by;
         NEW.refunded_at := OLD.refunded_at;
       ELSIF v_is_admin THEN
+        IF OLD.provider IS NOT NULL THEN
+          RAISE EXCEPTION 'Pagamentos FaciPay só podem ser rejeitados após evento CAN validado pelo webhook'
+            USING ERRCODE = '42501';
+        END IF;
         IF NULLIF(btrim(NEW.review_reason), '') IS NULL THEN
           RAISE EXCEPTION 'Indique o motivo da rejeição do pagamento'
             USING ERRCODE = '23514';
@@ -201,6 +209,10 @@ BEGIN
     ELSIF OLD.status = 'confirmed' AND NEW.status = 'refunded' THEN
       IF NOT v_is_admin THEN
         RAISE EXCEPTION 'O estorno exige validação administrativa'
+          USING ERRCODE = '42501';
+      END IF;
+      IF OLD.provider IS NOT NULL THEN
+        RAISE EXCEPTION 'Estornos FaciPay permanecem bloqueados até existir integração de estorno confirmada pelo fornecedor'
           USING ERRCODE = '42501';
       END IF;
       IF NULLIF(btrim(NEW.review_reason), '') IS NULL THEN
