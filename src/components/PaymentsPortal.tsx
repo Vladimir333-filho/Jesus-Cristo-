@@ -33,12 +33,14 @@ const METHOD_LABELS = {
     multicaixa_express: 'Multicaixa Express',
     unitel_money: 'Unitel Money',
     other: 'Outro',
+    facipay: 'FaciPay',
   },
   en: {
     bank_transfer: 'Bank transfer',
     multicaixa_express: 'Multicaixa Express',
     unitel_money: 'Unitel Money',
     other: 'Other',
+    facipay: 'FaciPay',
   },
 };
 
