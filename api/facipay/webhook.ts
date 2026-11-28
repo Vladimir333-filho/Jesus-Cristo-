@@ -146,9 +146,18 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: 'Temporary payment processing failure' }, 503);
   }
 
+  if (result.processed !== true && result.reason === 'unknown_transaction') {
+    // The checkout record may not yet be committed when the provider sends
+    // its callback. Ask the provider to retry instead of permanently
+    // acknowledging an event that could not be associated with a payment.
+    console.warn('FaciPay webhook received an event for an unknown transaction');
+    return json({ error: 'Payment transaction is not available yet' }, 503);
+  }
+
   if (result.processed !== true && result.reason === 'payment_mismatch') {
-    // A mismatch is acknowledged, but never updates the financial record.
-    console.warn('FaciPay webhook rejected a payment mismatch');
+    // A mismatch is acknowledged to avoid an endless retry, but never updates
+    // the financial record. Investigate it through the provider dashboard.
+    console.error('FaciPay webhook rejected a payment mismatch');
   }
 
   return json({
